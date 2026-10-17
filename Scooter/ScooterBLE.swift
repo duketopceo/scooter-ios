@@ -105,6 +105,7 @@ final class ScooterController: NSObject, ObservableObject {
     @Published var status = "Scanning off"
     @Published var isConnected = false
     @Published var telemetry = ScooterTelemetry()
+    @Published var connectedID: UUID?
 
     private var central: CBCentralManager?
     private var connected: CBPeripheral?
@@ -150,6 +151,7 @@ final class ScooterController: NSObject, ObservableObject {
         connected = nil
         writeChar = nil
         isConnected = false
+        connectedID = nil
         status = "Disconnected"
     }
 
@@ -208,6 +210,7 @@ extension ScooterController: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         connected = peripheral
+        connectedID = peripheral.identifier
         peripheral.delegate = self
         status = "Connected. Discovering services…"
         peripheral.discoverServices([Voltix.service])
@@ -219,6 +222,7 @@ extension ScooterController: CBCentralManagerDelegate {
         status = "Connect failed: \(error?.localizedDescription ?? "unknown error")"
         connected = nil
         isConnected = false
+        connectedID = nil
     }
 
     func centralManager(_ central: CBCentralManager,
@@ -229,6 +233,7 @@ extension ScooterController: CBCentralManagerDelegate {
         connected = nil
         writeChar = nil
         isConnected = false
+        connectedID = nil
         telemetry = ScooterTelemetry()
         status = error == nil ? "Disconnected" : "Disconnected: \(error!.localizedDescription)"
     }
