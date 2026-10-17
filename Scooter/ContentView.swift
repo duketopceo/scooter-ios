@@ -51,7 +51,7 @@ struct ContentView: View {
                     HStack {
                         Text(peripheral.name ?? "Unnamed device")
                         Spacer()
-                        if controller.isConnected {
+                        if controller.isConnected && controller.connectedID == peripheral.identifier {
                             Text("Connected").foregroundColor(.green)
                         }
                     }

@@ -4,7 +4,7 @@ A lightweight, no-account Swift/SwiftUI app that talks to a HopCycle W3 Max
 electric scooter directly over Bluetooth LE. It is a native port of the
 Voltix FF60 protocol recovered from the `com.world.voltix` Android APK.
 
-No TestFlight backend. No cloud. No account binding. The radio is CoreBluetooth
+No backend. No cloud. No account binding. The radio is CoreBluetooth
 on the phone, talking straight to the scooter.
 
 ## What it does
@@ -44,21 +44,23 @@ the Voltix app's account binding can.
 
 ## Build it on a Mac
 
-Requires Xcode (macOS). This is a hand-written `.pbxproj`, so it also opens
-in Xcode 14+.
+Requires Xcode (macOS). The Xcode project is generated from `project.yml`
+with XcodeGen (`brew install xcodegen`), and the generated
+`Scooter.xcodeproj` is committed so it also opens directly.
 
-1. `open VoltixScooter.xcodeproj`
-2. Select your signing team (free personal team works for testing on your
-   own iPhone for 7 days at a time)
-3. Build and run on a physical iPhone — the iOS **Simulator has no BLE**
+- Bundle ID `com.duketopceo.scooter`, team `6BP7W45U55`, display name "Scooter".
+- Run on a physical iPhone. The iOS Simulator has no BLE.
+- TestFlight: `scripts/testflight.sh` archives, exports, and uploads
+  (needs `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`; `SKIP_UPLOAD=1` stops
+  after the IPA). The App Store Connect app record must exist first.
 
 Pairing happens inside this app. Do not pair through iOS Settings → Bluetooth.
 
 ## Files
 
-- `VoltixScooter/ScooterBLE.swift` — protocol + CoreBluetooth controller
-- `VoltixScooter/ContentView.swift` — SwiftUI UI
-- `VoltixScooter/VoltixScooterApp.swift` — app entry point
+- `Scooter/ScooterBLE.swift` — protocol + CoreBluetooth controller
+- `Scooter/ContentView.swift` — SwiftUI UI
+- `Scooter/ScooterApp.swift` — app entry point
 
 ## Note on TestFlight
 

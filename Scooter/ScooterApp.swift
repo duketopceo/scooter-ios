@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct VoltixScooterApp: App {
+struct ScooterApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

@@ -1,0 +1,26 @@
+name: Scooter
+options:
+  bundleIdPrefix: com.duketopceo
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: 6BP7W45U55
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+targets:
+  Scooter:
+    type: application
+    platform: iOS
+    sources:
+      - Scooter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.duketopceo.scooter
+        PRODUCT_NAME: Scooter
+        INFOPLIST_FILE: Scooter/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
