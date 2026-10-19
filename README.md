@@ -17,6 +17,17 @@ on the phone, talking straight to the scooter.
 - Speed limit (km/h)
 - Cruise control on/off
 
+## Your scooter (stem sticker)
+
+The factory QR labels point at the **Voltix** app (`com.world.voltix`)—the same
+protocol this repo implements at the BLE layer. Example serial from a W3 Max
+sticker: **`US2603013795W3MAX`**. The bind QR is for Voltix account pairing;
+**this app does not use bind** and never sends unbind/reset commands.
+
+Bluetooth name is **not** guaranteed to match the serial. It may contain
+`W3MAX`, `Voltix`, or a fragment of the serial (e.g. `13795`). Prefer
+**Scooters only (FF60)** in the app over guessing the name.
+
 ## Finding your scooter in the scan list
 
 The Voltix APK does **not** ship a fixed Bluetooth name for the W3 Max. The
@@ -55,8 +66,8 @@ The Voltix byte-level protocol was decompiled from the Android app
 - UUIDs, frame layout, CRC: **high** (read straight out of the decompiled app)
 - Telemetry decode (battery byte, speed bit-packing): **provisional** —
   confirm against the scooter's own display before trusting the numbers
-- "Right scooter for Voltix protocol": **moderate** — fits the 25 MPH W3 Max
-  spec; the physical model label has not been photographed
+- "Right scooter for Voltix protocol": **confirmed** for W3 Max with Voltix
+  stem QR / serial suffix `W3MAX`
 
 ## What is deliberately refused
 
@@ -77,6 +88,21 @@ with XcodeGen (`brew install xcodegen`), and the generated
   after the IPA). The App Store Connect app record must exist first.
 
 Pairing happens inside this app. Do not pair through iOS Settings → Bluetooth.
+
+## TestFlight (Mac mini or GitHub Actions)
+
+**Local (same keys as Kate/Cairn):**
+
+```bash
+cd ~/src/scooter-ios && git pull origin main
+export ASC_KEY_ID="…" ASC_ISSUER_ID="…" ASC_KEY_PATH="$HOME/keys/AuthKey_….p8"
+export APPLE_TEAM_ID=6BP7W45U55
+./scripts/testflight.sh
+```
+
+**CI:** workflow `.github/workflows/testflight.yml` runs on push to `main` when
+`Scooter/**` changes, if repo secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`,
+`ASC_KEY_P8`, and `APPLE_TEAM_ID` are set.
 
 ## Files
 

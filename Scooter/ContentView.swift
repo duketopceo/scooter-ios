@@ -56,7 +56,7 @@ struct ContentView: View {
                 }
             }
             .pickerStyle(.segmented)
-            Text("HopCycle does not use a fixed friendly name in the Voltix app. Scooters-only matches BLE service FF60—the Voltix protocol—not “Scooter” or “HopCycle”.")
+            Text("HopCycle/W3 Max uses the Voltix FF60 protocol (same as the official Voltix app QR on the stem). Filter by FF60, not by app name “Scooter”.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
@@ -76,6 +76,14 @@ struct ContentView: View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
+                        if item.likelyW3Max {
+                            Text("W3?")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.2))
+                                .cornerRadius(4)
+                        }
                         if item.advertisesVoltix {
                             Text("FF60")
                                 .font(.caption2)
@@ -147,10 +155,11 @@ struct ContentView: View {
 
     private var identifyHelpSection: some View {
         Section("Find your scooter") {
+            Text("Stem sticker: serial \(ScooterIdentity.exampleSerial) (Voltix bind QR). BLE name may include W3MAX or part of that serial—not “HopCycle”.")
             Text("1. Power the scooter on (display awake). BLE is often off when fully asleep.")
             Text("2. Leave Scooters only (FF60) selected and stand within ~2 m.")
-            Text("3. Tap the top row (strongest dBm). Wrong device? Disconnect and try the next.")
-            Text("4. Names are often random (MAC fragment)—not “HopCycle”. nRF Connect (free) also lists devices advertising service 0xFF60.")
+            Text("3. Prefer rows tagged W3? or strongest dBm. Wrong device? Disconnect and try the next.")
+            Text("You do not need the Voltix app or bind QR for this client—it speaks FF60 directly.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }

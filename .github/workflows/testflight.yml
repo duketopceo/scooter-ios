@@ -1,0 +1,54 @@
+name: TestFlight
+
+# Upload requires App Store Connect API key secrets on this repo.
+# Mac mini: `./scripts/testflight.sh` is equivalent when secrets live in the shell.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Scooter/**"
+      - "Scooter.xcodeproj/**"
+      - "project.yml"
+      - "scripts/testflight.sh"
+      - ".github/workflows/testflight.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upload:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          test -n "${ASC_KEY_P8}"
+          mkdir -p "$HOME/keys"
+          printf '%s' "$ASC_KEY_P8" > "$HOME/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8"
+          chmod 600 "$HOME/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8"
+
+      - name: Archive and upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ github.workspace }}/../keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          export ASC_KEY_PATH="$HOME/keys/AuthKey_${ASC_KEY_ID}.p8"
+          test -f "$ASC_KEY_PATH"
+          ./scripts/testflight.sh

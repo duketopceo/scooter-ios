@@ -10,11 +10,26 @@ struct DiscoveredPeripheral: Identifiable {
     var displayName: String
     var rssi: Int
     var advertisesVoltix: Bool
+    /// Heuristic: W3 Max sticker serials end in W3MAX; BLE name may include that substring.
+    var likelyW3Max: Bool
 }
 
 enum ScanFilter: String, CaseIterable {
     case voltixOnly = "Scooters only (FF60)"
     case allNamed = "All named devices"
+}
+
+enum ScooterIdentity {
+    /// Example from stem sticker: US2603013795W3MAX (Voltix bind QR).
+    static let exampleSerial = "US2603013795W3MAX"
+
+    static func likelyW3Max(advertisedName: String) -> Bool {
+        let upper = advertisedName.uppercased()
+        if upper.contains("W3MAX") { return true }
+        if upper.contains("VOLTIX") { return true }
+        if upper.contains("13795") { return true }
+        return false
+    }
 }
 
 // MARK: - Telemetry (provisional decode)
@@ -245,12 +260,15 @@ final class ScooterController: NSObject, ObservableObject {
             displayName = "Unnamed device"
         }
 
+        let likelyW3 = ScooterIdentity.likelyW3Max(advertisedName: displayName)
+
         let entry = DiscoveredPeripheral(
             id: peripheral.identifier,
             peripheral: peripheral,
             displayName: displayName,
             rssi: rssi,
-            advertisesVoltix: advertisesVoltix
+            advertisesVoltix: advertisesVoltix,
+            likelyW3Max: likelyW3
         )
 
         if let idx = discovered.firstIndex(where: { $0.id == peripheral.identifier }) {
@@ -258,7 +276,10 @@ final class ScooterController: NSObject, ObservableObject {
         } else {
             discovered.append(entry)
         }
-        discovered.sort { $0.rssi > $1.rssi }
+        discovered.sort { a, b in
+            if a.likelyW3Max != b.likelyW3Max { return a.likelyW3Max && !b.likelyW3Max }
+            return a.rssi > b.rssi
+        }
     }
 }
 
