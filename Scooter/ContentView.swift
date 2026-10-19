@@ -12,6 +12,7 @@ struct ContentView: View {
         NavigationView {
             Form {
                 statusSection
+                scanFilterSection
                 if !controller.discovered.isEmpty {
                     discoveredSection
                 }
@@ -19,6 +20,8 @@ struct ContentView: View {
                     dashboardSection
                     controlsSection
                     noteSection
+                } else {
+                    identifyHelpSection
                 }
             }
             .navigationTitle("W3 Max")
@@ -42,16 +45,46 @@ struct ContentView: View {
         }
     }
 
+    private var scanFilterSection: some View {
+        Section("Scan filter") {
+            Picker("Show", selection: Binding(
+                get: { controller.scanFilter },
+                set: { controller.setScanFilter($0) }
+            )) {
+                ForEach(ScanFilter.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text("HopCycle does not use a fixed friendly name in the Voltix app. Scooters-only matches BLE service FF60—the Voltix protocol—not “Scooter” or “HopCycle”.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+    }
+
     private var discoveredSection: some View {
-        Section("Found devices") {
-            ForEach(controller.discovered, id: \.identifier) { peripheral in
+        Section("Found devices (strongest signal first)") {
+            ForEach(controller.discovered) { item in
                 Button {
-                    controller.connect(peripheral)
+                    controller.connect(item.peripheral)
                 } label: {
                     HStack {
-                        Text(peripheral.name ?? "Unnamed device")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.displayName)
+                            Text("\(item.rssi) dBm")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                         Spacer()
-                        if controller.isConnected && controller.connectedID == peripheral.identifier {
+                        if item.advertisesVoltix {
+                            Text("FF60")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.15))
+                                .cornerRadius(4)
+                        }
+                        if controller.isConnected && controller.connectedID == item.id {
                             Text("Connected").foregroundColor(.green)
                         }
                     }
@@ -107,6 +140,17 @@ struct ContentView: View {
     private var noteSection: some View {
         Section {
             Text("Battery and speed decoding is provisional. Verify against the scooter's own display before trusting it.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var identifyHelpSection: some View {
+        Section("Find your scooter") {
+            Text("1. Power the scooter on (display awake). BLE is often off when fully asleep.")
+            Text("2. Leave Scooters only (FF60) selected and stand within ~2 m.")
+            Text("3. Tap the top row (strongest dBm). Wrong device? Disconnect and try the next.")
+            Text("4. Names are often random (MAC fragment)—not “HopCycle”. nRF Connect (free) also lists devices advertising service 0xFF60.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
