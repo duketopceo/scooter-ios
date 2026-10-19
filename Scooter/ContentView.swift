@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var controller = ScooterController()
+    @EnvironmentObject private var controller: ScooterController
+    @EnvironmentObject private var tripRecorder: TripRecorder
     @State private var gear = 1
     @State private var speedLimitKmh = 25
     @State private var cruiseOn = false
@@ -19,10 +20,19 @@ struct ContentView: View {
             Form {
                 statusSection
                 scanFilterSection
+                if let fav = controller.savedFavorite, !controller.isConnected {
+                    Section("Saved scooter") {
+                        Text("Will auto-connect to \(fav.displayName) when it appears.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                }
                 if !controller.discovered.isEmpty {
                     discoveredSection
                 }
                 if controller.isConnected {
+                    myScooterSection
+                    rideSection
                     dashboardSection
                     controlsSection
                     noteSection
@@ -33,7 +43,6 @@ struct ContentView: View {
             .navigationTitle("W3 Max")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Hidden: tap the title five times for the Debug panel.
                 ToolbarItem(placement: .principal) {
                     Text("W3 Max").font(.headline)
                         .onTapGesture {
@@ -43,6 +52,41 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showDebug) { DebugView(controller: controller) }
+        }
+    }
+
+    private var myScooterSection: some View {
+        Section("My scooter") {
+            if controller.isCurrentConnectionFavorite {
+                Label("Saved as your scooter", systemImage: "star.fill")
+                    .foregroundColor(.yellow)
+            } else {
+                Button("Save as my scooter") {
+                    controller.saveFavoriteFromCurrentConnection()
+                }
+            }
+        }
+    }
+
+    private var rideSection: some View {
+        Section("Trip log") {
+            if tripRecorder.isRecording {
+                Label("Recording ride…", systemImage: "record.circle")
+                    .foregroundColor(.red)
+                Button("End ride", role: .destructive) {
+                    tripRecorder.endRide()
+                }
+            } else {
+                Button("Start ride") {
+                    tripRecorder.startRide()
+                }
+            }
+            if let err = tripRecorder.locationError {
+                Text(err).font(.footnote).foregroundColor(.red)
+            }
+            Text("GPS route and scooter speed are saved on this device. View past rides on the Trips tab.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
         }
     }
 
