@@ -10,11 +10,15 @@
 		2E30813FDFFB1FA72EF42C86 /* ScooterBLE.swift in Sources */ = {isa = PBXBuildFile; fileRef = C34CD961207155670B4A1F74 /* ScooterBLE.swift */; };
 		55872DB4D22A40C1B742672A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8705F63D278B2A035CEF795C /* Assets.xcassets */; };
 		92CC2E9B88062F697872D3A2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE474CA2092930DC7DCE72FE /* ContentView.swift */; };
+		A89349064CD6886805084964 /* Voltix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ABD3EDCF23089CB017121FC /* Voltix.swift */; };
 		DD2C7F5104C6CE331187FDBA /* ScooterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54DEC0AC58BC01AC91CECD5C /* ScooterApp.swift */; };
+		DE7BD6511B5CDC381BC0A81A /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42FC1CFDC5030974A6173E4C /* DebugView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		42FC1CFDC5030974A6173E4C /* DebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugView.swift; sourceTree = "<group>"; };
 		54DEC0AC58BC01AC91CECD5C /* ScooterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterApp.swift; sourceTree = "<group>"; };
+		5ABD3EDCF23089CB017121FC /* Voltix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Voltix.swift; sourceTree = "<group>"; };
 		625081CA3677A43369729FB4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6C391FC62CB6F211BD27E4CD /* Scooter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Scooter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8705F63D278B2A035CEF795C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -36,9 +40,11 @@
 			children = (
 				8705F63D278B2A035CEF795C /* Assets.xcassets */,
 				BE474CA2092930DC7DCE72FE /* ContentView.swift */,
+				42FC1CFDC5030974A6173E4C /* DebugView.swift */,
 				625081CA3677A43369729FB4 /* Info.plist */,
 				54DEC0AC58BC01AC91CECD5C /* ScooterApp.swift */,
 				C34CD961207155670B4A1F74 /* ScooterBLE.swift */,
+				5ABD3EDCF23089CB017121FC /* Voltix.swift */,
 			);
 			path = Scooter;
 			sourceTree = "<group>";
@@ -123,8 +129,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				92CC2E9B88062F697872D3A2 /* ContentView.swift in Sources */,
+				DE7BD6511B5CDC381BC0A81A /* DebugView.swift in Sources */,
 				DD2C7F5104C6CE331187FDBA /* ScooterApp.swift in Sources */,
 				2E30813FDFFB1FA72EF42C86 /* ScooterBLE.swift in Sources */,
+				A89349064CD6886805084964 /* Voltix.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -30,121 +30,6 @@ enum ScooterIdentity {
     }
 }
 
-struct ScooterTelemetry {
-    var batteryPct: Int = 0
-    var faultCode: UInt8 = 0
-    var speedKmh: Double = 0
-}
-
-// MARK: - Voltix FF60 protocol
-
-enum Voltix {
-    static let serviceString = "0000FF60-0000-1000-8000-00805F9B34FB"
-    static let notifyString  = "0000FF61-0000-1000-8000-00805F9B34FB"
-    static let writeString   = "0000FF62-0000-1000-8000-00805F9B34FB"
-
-    static let service = CBUUID(string: serviceString)
-    static let notifyChar = CBUUID(string: notifyString)
-    static let writeChar = CBUUID(string: writeString)
-
-    /// iOS often exposes 16-bit UUIDs (`FF60`) while we store the full Bluetooth base UUID.
-    static func matches(_ uuid: CBUUID, shortHex: String) -> Bool {
-        let u = uuid.uuidString.uppercased()
-        let short = shortHex.uppercased()
-        if u == short { return true }
-        if u.contains(short) { return true }
-        return false
-    }
-
-    static func isService(_ uuid: CBUUID) -> Bool { matches(uuid, shortHex: "FF60") }
-    static func isNotify(_ uuid: CBUUID) -> Bool { matches(uuid, shortHex: "FF61") }
-    static func isWrite(_ uuid: CBUUID) -> Bool { matches(uuid, shortHex: "FF62") }
-
-    static func advertisesVoltix(in advertisementData: [String: Any]) -> Bool {
-        let lists: [[CBUUID]?] = [
-            advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID],
-            advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID],
-            advertisementData[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID],
-        ]
-        for uuids in lists {
-            guard let uuids else { continue }
-            if uuids.contains(where: isService) { return true }
-        }
-        return false
-    }
-
-    enum Cmd: UInt8 {
-        case heartbeat  = 0x10
-        case connect    = 0x30
-        case lock       = 0x32
-        case light      = 0x33
-        case gear       = 0x35
-        case speedLimit = 0x36
-        case cruise     = 0x38
-        case queryCar   = 0x60
-    }
-
-    static func crc16Modbus(_ bytes: [UInt8]) -> UInt16 {
-        var crc: UInt16 = 0xFFFF
-        for b in bytes {
-            crc ^= UInt16(b)
-            for _ in 0..<8 {
-                if crc & 0x0001 == 1 {
-                    crc = (crc >> 1) ^ 0xA001
-                } else {
-                    crc >>= 1
-                }
-            }
-        }
-        return crc
-    }
-
-    static func frame(cmd: Cmd, param: UInt8, payload: [UInt8] = []) -> Data {
-        var body: [UInt8] = [cmd.rawValue, param, UInt8(payload.count)]
-        body.append(contentsOf: payload)
-        let crc = crc16Modbus(body)
-        var out: [UInt8] = [0x1A, 0xA1]
-        out.append(contentsOf: body)
-        out.append(UInt8(crc & 0xFF))
-        out.append(UInt8(crc >> 8))
-        out.append(0x1F)
-        out.append(0xF1)
-        return Data(out)
-    }
-
-    static func connectFrame() -> Data   { frame(cmd: .connect, param: 2, payload: [0x01]) }
-    static func heartbeatFrame() -> Data { frame(cmd: .heartbeat, param: 1) }
-    static func queryCarFrame() -> Data  { frame(cmd: .queryCar, param: 1) }
-
-    static func lockFrame() -> Data { frame(cmd: .lock, param: 2, payload: [0x00]) }
-
-    static func unlockFrame(password: String?) -> Data {
-        var payload: [UInt8] = [0x00]
-        if let pw = password, pw.count == 4, pw.allSatisfy({ $0.isNumber }) {
-            for ch in pw {
-                payload.append(UInt8(clamping: ch.wholeNumberValue ?? 0))
-            }
-        }
-        return frame(cmd: .lock, param: 2, payload: payload)
-    }
-
-    static func lightFrame(on: Bool) -> Data { frame(cmd: .light, param: 2, payload: [on ? 1 : 0]) }
-    static func gearFrame(_ g: Int) -> Data { frame(cmd: .gear, param: 2, payload: [UInt8(clamping: g)]) }
-    static func speedLimitFrame(_ kmh: Int) -> Data { frame(cmd: .speedLimit, param: 2, payload: [UInt8(kmh & 0xFF)]) }
-    static func cruiseFrame(_ v: Int) -> Data { frame(cmd: .cruise, param: 2, payload: [UInt8(v & 0xFF)]) }
-
-    static func parseQueryCar(_ payload: [UInt8]) -> ScooterTelemetry {
-        var t = ScooterTelemetry()
-        guard payload.count >= 5 else { return t }
-        t.faultCode = payload[2]
-        t.batteryPct = payload[3] <= 100 ? Int(payload[3]) : 0
-        let low = Int(payload[4])
-        let high = payload.count > 8 ? Int(payload[8] & 0x03) : 0
-        t.speedKmh = Double(low | (high << 8)) * 0.1
-        return t
-    }
-}
-
 // MARK: - BLE controller
 
 final class ScooterController: NSObject, ObservableObject {
@@ -157,6 +42,13 @@ final class ScooterController: NSObject, ObservableObject {
     @Published var isConnected = false
     @Published var telemetry = ScooterTelemetry()
     @Published var connectedID: UUID?
+    @Published var log: [LogLine] = []
+    @Published var runner: VariantRunner?
+    @Published var winners: [String: String] = UserDefaults.standard.dictionary(forKey: "voltix.winners") as? [String: String] ?? [:]
+    @Published var writeTypeNote = ""
+    private var rx: [UInt8] = []
+    private var pollsWithoutReply = 0
+    private var pollFrame: Data = Voltix.queryCarFrame(sub: nil)
 
     private var central: CBCentralManager?
     private var connected: CBPeripheral?
@@ -232,6 +124,8 @@ final class ScooterController: NSObject, ObservableObject {
         isConnected = false
         connectedID = nil
         telemetry = ScooterTelemetry()
+        rx.removeAll()
+        runner = nil
     }
 
     private func cancelSetupTimer() {
@@ -248,20 +142,166 @@ final class ScooterController: NSObject, ObservableObject {
         }
     }
 
-    private func send(_ data: Data) {
-        guard let connected, let writeCharacteristic else { return }
-        let type: CBCharacteristicWriteType = writeCharacteristic.properties.contains(.writeWithoutResponse)
-            ? .withoutResponse
-            : .withResponse
+    /// Writes one frame to FF62 and logs it. `withResponse` nil = what the characteristic offers (no-response first).
+    @discardableResult
+    func send(_ data: Data, note: String = "", withResponse: Bool? = nil) -> Bool {
+        let bytes = [UInt8](data)
+        if bytes.count > 2, Voltix.forbidden.contains(bytes[2]) {
+            addLog(.info, "REFUSED \(Voltix.hex(bytes)): bind/reset/OTA commands are blocked")
+            return false
+        }
+        guard let connected, let writeCharacteristic else {
+            addLog(.info, "Not connected: \(note)")
+            return false
+        }
+        let props = writeCharacteristic.properties
+        let type: CBCharacteristicWriteType
+        if let withResponse {
+            type = withResponse ? .withResponse : .withoutResponse
+        } else {
+            type = props.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+        }
         connected.writeValue(data, for: writeCharacteristic, type: type)
+        addLog(.tx, "\(Voltix.hex(bytes))\(note.isEmpty ? "" : "  \(note)")\(type == .withResponse ? "  [w/resp]" : "")")
+        return true
     }
 
-    func lock()                    { send(Voltix.lockFrame()) }
-    func unlock(pwd: String?)      { send(Voltix.unlockFrame(password: pwd)) }
-    func setLight(_ on: Bool)      { send(Voltix.lightFrame(on: on)) }
-    func setGear(_ g: Int)         { send(Voltix.gearFrame(g)) }
-    func setSpeedLimit(_ kmh: Int) { send(Voltix.speedLimitFrame(kmh)) }
-    func setCruise(_ v: Int)       { send(Voltix.cruiseFrame(v)) }
+    func sendRaw(_ hex: String, addFraming: Bool, withResponse: Bool?) {
+        guard let bytes = Voltix.parseHex(hex) else { addLog(.info, "Bad hex: \(hex)"); return }
+        if addFraming {
+            // "CMD PARAM PAYLOAD…" -> full frame with length, CRC and footer.
+            guard bytes.count >= 2 else { addLog(.info, "Need at least CMD and PARAM"); return }
+            send(Voltix.frame(bytes[0], param: bytes[1], payload: Array(bytes.dropFirst(2))), note: "raw", withResponse: withResponse)
+        } else {
+            send(Data(bytes), note: "raw", withResponse: withResponse)
+        }
+    }
+
+    func addLog(_ dir: LogLine.Dir, _ text: String) {
+        log.append(LogLine(time: Date(), dir: dir, text: text))
+        if log.count > 800 { log.removeFirst(log.count - 800) }
+    }
+
+    var logText: String { log.map(\.line).joined(separator: "\n") }
+
+    // MARK: Commands (confirmed: gear. Everything else experimental until a winner is saved.)
+
+    func lock()                    { send(Voltix.lockFrame(), note: "lock") }
+    func unlock(pwd: String?)      { send(Voltix.unlockFrame(password: pwd), note: "unlock") }
+    func setGear(_ g: Int)         { send(Voltix.gearFrame(g), note: "gear \(g)") }
+
+    func setLight(_ on: Bool) {
+        if let saved = winnerFrame("light") {
+            send(on ? saved : Self.zeroed(saved), note: "light \(on ? "on" : "off") (saved winner)")
+        } else {
+            // Untested on this scooter: try the two most likely shapes.
+            send(Voltix.frame(0x33, param: 2, payload: [on ? 1 : 0]), note: "light \(on ? "on" : "off") [v1]")
+            send(Voltix.frame(0x33, param: 2, payload: [on ? 1 : 0, on ? 1 : 0]), note: "light \(on ? "on" : "off") [v2]")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.send(Voltix.query(.queryLight), note: "query lights") }
+    }
+
+    func setSpeedLimit(_ kmh: Int) {
+        if let saved = winnerFrame("speed") {
+            // Rebuild the winning shape with the new value in its first payload byte.
+            var p = Voltix.payload([UInt8](saved)); if !p.isEmpty { p[0] = UInt8(clamping: kmh) }
+            let b = [UInt8](saved)
+            send(Voltix.frame(b[2], param: b[3], payload: p), note: "speed limit \(kmh) (saved shape)")
+        } else {
+            send(Voltix.frame(0x36, param: 2, payload: [UInt8(clamping: kmh)]), note: "speed limit \(kmh) km/h")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.send(Voltix.query(.querySpeedLimit), note: "query speed limit") }
+    }
+
+    func setCruise(_ on: Bool) {
+        if let saved = winnerFrame("cruise") {
+            send(on ? saved : Self.zeroed(saved), note: "cruise \(on ? "on" : "off") (saved winner)")
+        } else {
+            send(Voltix.frame(0x38, param: 2, payload: [on ? 1 : 0]), note: "cruise \(on ? "on" : "off")")
+        }
+    }
+
+    /// Experimental settings from the app's command table.
+    func setStartMode(zeroStart: Bool) { send(Voltix.frame(0x39, param: 2, payload: [zeroStart ? 1 : 0, 0]), note: "start mode \(zeroStart ? "zero-start" : "kick")") }
+    func setUnits(miles: Bool) { send(Voltix.frame(0x3C, param: 2, payload: [miles ? 1 : 0]), note: "units \(miles ? "mi" : "km")") }
+    func setEBrake(_ level: Int) { send(Voltix.frame(0x37, param: 2, payload: [UInt8(clamping: level)]), note: "e-brake \(level)") }
+    func setGaugeBrightness(_ level: Int) { send(Voltix.frame(0x34, param: 2, payload: [UInt8(clamping: level)]), note: "brightness \(level)") }
+    func setDriveMode(_ mode: Int) { send(Voltix.frame(0x3B, param: 2, payload: [UInt8(clamping: mode)]), note: "drive mode \(mode)") }
+    func setSmartLock(_ on: Bool) { send(Voltix.frame(0x47, param: 2, payload: [on ? 1 : 0]), note: "smart lock \(on)") }
+
+    func queryAll() {
+        let qs: [(Voltix.Cmd, UInt8?, String)] = [(.querySN, nil, "serial"), (.querySpeedLimit, nil, "speed limit"), (.queryLight, nil, "lights"),
+                                                  (.queryBMSVoltage, 0, "BMS voltage"), (.queryBMSInfo, 0, "BMS info"), (.queryFirmware, 0, "firmware")]
+        for (i, q) in qs.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.3) { [weak self] in self?.send(Voltix.query(q.0, sub: q.1), note: "query \(q.2)") }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in self?.send(Voltix.frame(0x3E, param: 1), note: "query trip (0x3E)") }
+    }
+
+    // MARK: Variant runner
+
+    func startVariants(_ kind: VariantRunner.Kind, value: Int = 0) {
+        let list: [Candidate]
+        switch kind {
+        case .light: list = Candidate.lightOn()
+        case .speed: list = Candidate.speedLimit(value)
+        case .cruise: list = Candidate.cruiseOn(gear: value)
+        case .poll: list = Candidate.queryCar()
+        }
+        runner = VariantRunner(kind: kind, candidates: list, index: 0)
+        addLog(.info, "--- \(kind.title) variants: \(list.count) to try ---")
+        sendCurrentVariant()
+    }
+
+    func sendCurrentVariant() {
+        guard let r = runner, r.index < r.candidates.count else { return }
+        let c = r.candidates[r.index]
+        if r.kind == .poll { pollFrame = c.frame; pollsWithoutReply = 0 }
+        send(c.frame, note: "\(r.kind.title) #\(r.index + 1): \(c.label)", withResponse: c.withResponse)
+    }
+
+    func nextVariant() {
+        guard var r = runner else { return }
+        if r.kind == .light, r.index < r.candidates.count {
+            // Put the light back before the next shape so each try starts from off.
+            send(Self.zeroed(r.candidates[r.index].frame), note: "undo #\(r.index + 1)", withResponse: r.candidates[r.index].withResponse)
+        }
+        r.index += 1
+        runner = r
+        if r.index >= r.candidates.count {
+            addLog(.info, "--- \(r.kind.title): no more variants. Copy the log and send it over. ---")
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.sendCurrentVariant() }
+        }
+    }
+
+    func markWorked() {
+        guard let r = runner, r.index < r.candidates.count else { return }
+        let c = r.candidates[r.index]
+        winners[r.kind.rawValue] = Voltix.hex(c.frame)
+        winners[r.kind.rawValue + ".label"] = c.label
+        UserDefaults.standard.set(winners, forKey: "voltix.winners")
+        addLog(.info, "*** WORKED: \(r.kind.title) #\(r.index + 1) \(c.label) = \(Voltix.hex(c.frame)) (saved) ***")
+        runner = nil
+    }
+
+    func clearWinner(_ kind: VariantRunner.Kind) {
+        winners[kind.rawValue] = nil; winners[kind.rawValue + ".label"] = nil
+        UserDefaults.standard.set(winners, forKey: "voltix.winners")
+        if kind == .poll { pollFrame = Voltix.queryCarFrame(sub: nil) }
+    }
+
+    private func winnerFrame(_ key: String) -> Data? { winners[key].flatMap(Voltix.parseHex).map { Data($0) } }
+
+    /// Same frame with every payload byte set to 0 (the "off" of an "on" shape), CRC rebuilt.
+    static func zeroed(_ frame: Data) -> Data {
+        let b = [UInt8](frame)
+        guard b.count >= 9 else { return frame }
+        let p = Voltix.payload(b).map { _ in UInt8(0) }
+        let crc = Voltix.crc16Modbus(Array(b[2..<(b.count - 4)]))
+        let bigEndian = b[b.count - 4] == UInt8(crc >> 8) && b[b.count - 3] == UInt8(crc & 0xFF) && (crc >> 8) != (crc & 0xFF)
+        return Voltix.frame(b[2], param: b[3], payload: p, crcBigEndian: bigEndian)
+    }
 
     private func upsertDiscovery(
         peripheral: CBPeripheral,
@@ -315,11 +355,20 @@ final class ScooterController: NSObject, ObservableObject {
         bluetoothError = nil
         isConnected = true
         status = "Connected to scooter"
-        // Voltix app sends connect twice ~1 s apart.
-        send(Voltix.connectFrame())
+        if let c = writeCharacteristic {
+            var props: [String] = []
+            if c.properties.contains(.write) { props.append("write") }
+            if c.properties.contains(.writeWithoutResponse) { props.append("writeWithoutResponse") }
+            writeTypeNote = props.joined(separator: ", ")
+            addLog(.info, "Connected. FF62 supports: \(writeTypeNote). MTU (no response): \(connected?.maximumWriteValueLength(for: .withoutResponse) ?? 0)")
+        }
+        if let w = winnerFrame("poll") { pollFrame = w }
+        // Voltix app sends connect twice ~1 s apart, then a heartbeat.
+        send(Voltix.connectFrame(), note: "connect")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.send(Voltix.connectFrame())
-            self?.send(Voltix.heartbeatFrame())
+            self?.send(Voltix.connectFrame(), note: "connect")
+            self?.send(Voltix.heartbeatFrame(), note: "heartbeat")
+            self?.queryAll()
         }
         startPolling()
     }
@@ -465,23 +514,92 @@ extension ScooterController: CBPeripheralDelegate {
         }
     }
 
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error { addLog(.info, "Write error: \(error.localizedDescription)") }
+    }
+
     func peripheral(_ peripheral: CBPeripheral,
                     didUpdateValueFor characteristic: CBCharacteristic,
                     error: Error?) {
-        guard error == nil,
-              Voltix.isNotify(characteristic.uuid),
-              let data = characteristic.value else { return }
-        let bytes = [UInt8](data)
-        guard bytes.count >= 7, bytes[0] == 0x1A, bytes[1] == 0xA1 else { return }
-        if bytes[2] == Voltix.Cmd.queryCar.rawValue {
-            telemetry = Voltix.parseQueryCar(Array(bytes.dropFirst(5)))
+        guard error == nil, Voltix.isNotify(characteristic.uuid), let data = characteristic.value else { return }
+        rx += [UInt8](data)
+        let frames = Voltix.extractFrames(&rx)
+        if frames.isEmpty { addLog(.rx, "\(Voltix.hex(data))  (partial)") }
+        for f in frames { handle(f) }
+    }
+
+    private func handle(_ f: [UInt8]) {
+        let p = Voltix.payload(f)
+        let cmd = f[2]
+        let name = Voltix.Cmd(rawValue: cmd).map { "\($0)" } ?? String(format: "0x%02X", cmd)
+        let crc = Voltix.crcOK(f) ? "" : "  CRC?"
+        // The 1 s telemetry poll would flood the log: keep a 0x60 line only when it changed.
+        if cmd != Voltix.Cmd.queryCar.rawValue || p != telemetry.rawQueryCar {
+            addLog(.rx, "\(Voltix.hex(f))  \(name)\(crc)")
+        }
+        switch cmd {
+        case Voltix.Cmd.queryCar.rawValue:
+            pollsWithoutReply = 0
+            if f[3] == 2 || p.count >= 14 { var t = telemetry; Voltix.applyMeter2(p, to: &t); telemetry = t }
+            if p.count >= 5 { var t = telemetry; Voltix.applyQueryCar(p, to: &t); telemetry = t }
+        case Voltix.Cmd.querySpeedLimit.rawValue:
+            if let v = p.first, v > 0, v < 80 { telemetry.speedLimitKmh = Int(v) }
+        case Voltix.Cmd.queryLight.rawValue, Voltix.Cmd.light.rawValue:
+            if let v = p.first { telemetry.lightFlags = v }
+        case Voltix.Cmd.querySN.rawValue:
+            telemetry.serial = String(bytes: p.filter { $0 >= 0x20 && $0 < 0x7F }, encoding: .ascii)
+        case Voltix.Cmd.queryFirmware.rawValue:
+            telemetry.firmware = Voltix.hex(p)
+        case Voltix.Cmd.queryBMSVoltage.rawValue, Voltix.Cmd.queryBMSInfo.rawValue:
+            var t = telemetry; Voltix.applyMeter2(p, to: &t); telemetry = t
+        case Voltix.Cmd.singleMile.rawValue:
+            telemetry.tripRaw = p
+        default:
+            break
         }
     }
 
     private func startPolling() {
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.send(Voltix.queryCarFrame())
+            guard let self else { return }
+            self.send(self.pollFrame, note: "")
+            self.pollsWithoutReply += 1
+            // No telemetry after 4 polls with the old empty frame: the doc says 0x60 takes a [sub] byte.
+            if self.pollsWithoutReply == 4, self.winners["poll"] == nil, self.runner?.kind != .poll {
+                self.pollFrame = self.pollFrame.count == 9 ? Voltix.queryCarFrame(sub: 0x01) : Voltix.queryCarFrame(sub: nil)
+                self.addLog(.info, "No telemetry yet: switching poll to \(Voltix.hex(self.pollFrame))")
+                self.pollsWithoutReply = 0
+            }
         }
     }
+}
+
+struct LogLine: Identifiable {
+    enum Dir: String { case tx = "→", rx = "←", info = "•" }
+    let id = UUID()
+    let time: Date
+    let dir: Dir
+    let text: String
+    var line: String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"
+        return "\(f.string(from: time)) \(dir.rawValue) \(text)"
+    }
+}
+
+struct VariantRunner {
+    enum Kind: String { case light, speed, cruise, poll
+        var title: String {
+            switch self {
+            case .light: "Light"
+            case .speed: "Speed limit"
+            case .cruise: "Cruise"
+            case .poll: "Telemetry poll"
+            }
+        }
+    }
+    let kind: Kind
+    let candidates: [Candidate]
+    var index: Int
+    var current: Candidate? { index < candidates.count ? candidates[index] : nil }
 }
