@@ -46,6 +46,14 @@ final class ScooterController: NSObject, ObservableObject {
     @Published var runner: VariantRunner?
     @Published var winners: [String: String] = UserDefaults.standard.dictionary(forKey: "voltix.winners") as? [String: String] ?? [:]
     @Published var writeTypeNote = ""
+    @Published var savedFavorite: SavedScooter? = SavedScooterStore.shared.loadFavorite()
+    @Published var autoConnectEnabled: Bool = SavedScooterStore.shared.autoConnectEnabled
+
+    /// Called when Bluetooth powers on; default behavior is `startScan()` when nil.
+    var bluetoothBootstrap: ((ScooterController) -> Void)?
+    /// Return true to connect immediately when this peripheral appears while scanning.
+    var shouldAutoConnect: ((UUID, CBPeripheral) -> Bool)?
+
     private var rx: [UInt8] = []
     private var pollsWithoutReply = 0
     private var pollFrame: Data = Voltix.queryCarFrame(sub: nil)
@@ -61,6 +69,41 @@ final class ScooterController: NSObject, ObservableObject {
     override init() {
         super.init()
         central = CBCentralManager(delegate: self, queue: .main)
+    }
+
+    func refreshSavedScooterFromStore() {
+        savedFavorite = SavedScooterStore.shared.loadFavorite()
+        autoConnectEnabled = SavedScooterStore.shared.autoConnectEnabled
+    }
+
+    func setAutoConnect(_ enabled: Bool) {
+        autoConnectEnabled = enabled
+        SavedScooterStore.shared.autoConnectEnabled = enabled
+    }
+
+    func saveFavoriteFromCurrentConnection() {
+        guard let peripheral = connected else { return }
+        var name = peripheral.name ?? ""
+        if name.isEmpty, let sn = telemetry.serial, !sn.isEmpty { name = sn }
+        if name.isEmpty { name = "My scooter" }
+        let fav = SavedScooter(id: peripheral.identifier, displayName: name, savedAt: Date())
+        SavedScooterStore.shared.saveFavorite(fav)
+        savedFavorite = fav
+        status = "Saved \(name) as your scooter"
+    }
+
+    func clearSavedFavorite() {
+        SavedScooterStore.shared.clearFavorite()
+        savedFavorite = nil
+    }
+
+    var isCurrentConnectionFavorite: Bool {
+        guard let fav = savedFavorite, let id = connectedID else { return false }
+        return fav.id == id
+    }
+
+    func retrievePeripheral(id: UUID) -> CBPeripheral? {
+        central?.retrievePeripherals(withIdentifiers: [id]).first
     }
 
     func setScanFilter(_ filter: ScanFilter) {
@@ -169,7 +212,6 @@ final class ScooterController: NSObject, ObservableObject {
     func sendRaw(_ hex: String, addFraming: Bool, withResponse: Bool?) {
         guard let bytes = Voltix.parseHex(hex) else { addLog(.info, "Bad hex: \(hex)"); return }
         if addFraming {
-            // "CMD PARAM PAYLOAD…" -> full frame with length, CRC and footer.
             guard bytes.count >= 2 else { addLog(.info, "Need at least CMD and PARAM"); return }
             send(Voltix.frame(bytes[0], param: bytes[1], payload: Array(bytes.dropFirst(2))), note: "raw", withResponse: withResponse)
         } else {
@@ -194,7 +236,6 @@ final class ScooterController: NSObject, ObservableObject {
         if let saved = winnerFrame("light") {
             send(on ? saved : Self.zeroed(saved), note: "light \(on ? "on" : "off") (saved winner)")
         } else {
-            // Untested on this scooter: try the two most likely shapes.
             send(Voltix.frame(0x33, param: 2, payload: [on ? 1 : 0]), note: "light \(on ? "on" : "off") [v1]")
             send(Voltix.frame(0x33, param: 2, payload: [on ? 1 : 0, on ? 1 : 0]), note: "light \(on ? "on" : "off") [v2]")
         }
@@ -203,7 +244,6 @@ final class ScooterController: NSObject, ObservableObject {
 
     func setSpeedLimit(_ kmh: Int) {
         if let saved = winnerFrame("speed") {
-            // Rebuild the winning shape with the new value in its first payload byte.
             var p = Voltix.payload([UInt8](saved)); if !p.isEmpty { p[0] = UInt8(clamping: kmh) }
             let b = [UInt8](saved)
             send(Voltix.frame(b[2], param: b[3], payload: p), note: "speed limit \(kmh) (saved shape)")
@@ -221,7 +261,6 @@ final class ScooterController: NSObject, ObservableObject {
         }
     }
 
-    /// Experimental settings from the app's command table.
     func setStartMode(zeroStart: Bool) { send(Voltix.frame(0x39, param: 2, payload: [zeroStart ? 1 : 0, 0]), note: "start mode \(zeroStart ? "zero-start" : "kick")") }
     func setUnits(miles: Bool) { send(Voltix.frame(0x3C, param: 2, payload: [miles ? 1 : 0]), note: "units \(miles ? "mi" : "km")") }
     func setEBrake(_ level: Int) { send(Voltix.frame(0x37, param: 2, payload: [UInt8(clamping: level)]), note: "e-brake \(level)") }
@@ -263,7 +302,6 @@ final class ScooterController: NSObject, ObservableObject {
     func nextVariant() {
         guard var r = runner else { return }
         if r.kind == .light, r.index < r.candidates.count {
-            // Put the light back before the next shape so each try starts from off.
             send(Self.zeroed(r.candidates[r.index].frame), note: "undo #\(r.index + 1)", withResponse: r.candidates[r.index].withResponse)
         }
         r.index += 1
@@ -293,7 +331,6 @@ final class ScooterController: NSObject, ObservableObject {
 
     private func winnerFrame(_ key: String) -> Data? { winners[key].flatMap(Voltix.parseHex).map { Data($0) } }
 
-    /// Same frame with every payload byte set to 0 (the "off" of an "on" shape), CRC rebuilt.
     static func zeroed(_ frame: Data) -> Data {
         let b = [UInt8](frame)
         guard b.count >= 9 else { return frame }
@@ -343,6 +380,10 @@ final class ScooterController: NSObject, ObservableObject {
             if a.likelyW3Max != b.likelyW3Max { return a.likelyW3Max && !b.likelyW3Max }
             return a.rssi > b.rssi
         }
+
+        if shouldAutoConnect?(peripheral.identifier, peripheral) == true {
+            connect(peripheral)
+        }
     }
 
     private func voltixService(on peripheral: CBPeripheral) -> CBService? {
@@ -363,7 +404,6 @@ final class ScooterController: NSObject, ObservableObject {
             addLog(.info, "Connected. FF62 supports: \(writeTypeNote). MTU (no response): \(connected?.maximumWriteValueLength(for: .withoutResponse) ?? 0)")
         }
         if let w = winnerFrame("poll") { pollFrame = w }
-        // Voltix app sends connect twice ~1 s apart, then a heartbeat.
         send(Voltix.connectFrame(), note: "connect")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.send(Voltix.connectFrame(), note: "connect")
@@ -390,7 +430,11 @@ extension ScooterController: CBCentralManagerDelegate {
         case .poweredOn:
             bluetoothReady = true
             bluetoothError = nil
-            startScan()
+            if let bootstrap = bluetoothBootstrap {
+                bootstrap(self)
+            } else {
+                startScan()
+            }
         case .poweredOff:
             bluetoothReady = false
             bluetoothError = "Bluetooth is off. Turn it on in Settings."
@@ -420,7 +464,6 @@ extension ScooterController: CBCentralManagerDelegate {
         bluetoothError = nil
         status = "Connected. Discovering services…"
         beginSetupTimeout(for: peripheral)
-        // Discover all services — filtered discovery + strict UUID compare caused silent hangs.
         peripheral.discoverServices(nil)
     }
 
@@ -533,7 +576,6 @@ extension ScooterController: CBPeripheralDelegate {
         let cmd = f[2]
         let name = Voltix.Cmd(rawValue: cmd).map { "\($0)" } ?? String(format: "0x%02X", cmd)
         let crc = Voltix.crcOK(f) ? "" : "  CRC?"
-        // The 1 s telemetry poll would flood the log: keep a 0x60 line only when it changed.
         if cmd != Voltix.Cmd.queryCar.rawValue || p != telemetry.rawQueryCar {
             addLog(.rx, "\(Voltix.hex(f))  \(name)\(crc)")
         }
@@ -565,7 +607,6 @@ extension ScooterController: CBPeripheralDelegate {
             guard let self else { return }
             self.send(self.pollFrame, note: "")
             self.pollsWithoutReply += 1
-            // No telemetry after 4 polls with the old empty frame: the doc says 0x60 takes a [sub] byte.
             if self.pollsWithoutReply == 4, self.winners["poll"] == nil, self.runner?.kind != .poll {
                 self.pollFrame = self.pollFrame.count == 9 ? Voltix.queryCarFrame(sub: 0x01) : Voltix.queryCarFrame(sub: nil)
                 self.addLog(.info, "No telemetry yet: switching poll to \(Voltix.hex(self.pollFrame))")
