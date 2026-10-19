@@ -17,6 +17,28 @@ on the phone, talking straight to the scooter.
 - Speed limit (km/h)
 - Cruise control on/off
 
+## Finding your scooter in the scan list
+
+The Voltix APK does **not** ship a fixed Bluetooth name for the W3 Max. The
+controller usually advertises a generic name (often part of the MAC), not
+“HopCycle” or “Scooter”.
+
+**Use the app’s default scan filter: “Scooters only (FF60)”.** That matches
+devices advertising BLE service `0000FF60-…`, which is the Voltix protocol
+this app speaks—not a marketing name.
+
+Tips:
+
+- Power the scooter on and stand within ~2 m.
+- Pick the **strongest RSSI** (top of the list). If connect fails, try the next.
+- If FF60 mode finds nothing, toggle **All named devices** (noisier) or use
+  [nRF Connect](https://apps.apple.com/app/nrf-connect-for-mobile/id1051070407)
+  and look for service **0xFF60**.
+- Pair only inside this app—not in Settings → Bluetooth.
+
+On a Mac you can also run `python3 reference/voltix_client.py scan` (needs
+`pip install bleak`) to print address, RSSI, and raw name.
+
 ## Where the protocol came from
 
 The Voltix byte-level protocol was decompiled from the Android app

@@ -2,6 +2,21 @@ import Foundation
 import CoreBluetooth
 import Combine
 
+// MARK: - Discovery
+
+struct DiscoveredPeripheral: Identifiable {
+    let id: UUID
+    let peripheral: CBPeripheral
+    var displayName: String
+    var rssi: Int
+    var advertisesVoltix: Bool
+}
+
+enum ScanFilter: String, CaseIterable {
+    case voltixOnly = "Scooters only (FF60)"
+    case allNamed = "All named devices"
+}
+
 // MARK: - Telemetry (provisional decode)
 
 struct ScooterTelemetry {
@@ -18,6 +33,21 @@ enum Voltix {
     static let writeString   = "0000FF62-0000-1000-8000-00805F9B34FB"
 
     static let service = CBUUID(string: serviceString)
+
+    static func advertisesVoltix(in advertisementData: [String: Any]) -> Bool {
+        let lists: [[CBUUID]?] = [
+            advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID],
+            advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID],
+            advertisementData[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID],
+        ]
+        for uuids in lists {
+            guard let uuids else { continue }
+            if uuids.contains(where: { $0.uuidString.uppercased().contains("FF60") }) {
+                return true
+            }
+        }
+        return false
+    }
 
     enum Cmd: UInt8 {
         case heartbeat  = 0x10
@@ -101,7 +131,8 @@ final class ScooterController: NSObject, ObservableObject {
     @Published var bluetoothReady = false
     @Published var bluetoothError: String?
     @Published var isScanning = false
-    @Published var discovered: [CBPeripheral] = []
+    @Published var discovered: [DiscoveredPeripheral] = []
+    @Published var scanFilter: ScanFilter = .voltixOnly
     @Published var status = "Scanning off"
     @Published var isConnected = false
     @Published var telemetry = ScooterTelemetry()
@@ -117,6 +148,14 @@ final class ScooterController: NSObject, ObservableObject {
         central = CBCentralManager(delegate: self, queue: .main)
     }
 
+    func setScanFilter(_ filter: ScanFilter) {
+        guard filter != scanFilter else { return }
+        scanFilter = filter
+        if isScanning {
+            startScan()
+        }
+    }
+
     // MARK: Scan / connect
 
     func startScan() {
@@ -126,14 +165,23 @@ final class ScooterController: NSObject, ObservableObject {
         }
         discovered.removeAll()
         isScanning = true
-        status = "Scanning…"
-        central.scanForPeripherals(withServices: nil,
-                                   options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        let mode = scanFilter == .voltixOnly ? "FF60 scooters" : "all named BLE"
+        status = "Scanning for \(mode)…"
+        let services: [CBUUID]? = scanFilter == .voltixOnly ? [Voltix.service] : nil
+        central.scanForPeripherals(
+            withServices: services,
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+        )
     }
 
     func stopScan() {
         central?.stopScan()
         isScanning = false
+        if discovered.isEmpty, scanFilter == .voltixOnly {
+            status = "No FF60 devices found. Power the scooter on, stand within ~2 m, then Rescan—or switch to All named devices."
+        } else if !isConnected {
+            status = "Scan stopped"
+        }
     }
 
     func connect(_ peripheral: CBPeripheral) {
@@ -171,6 +219,47 @@ final class ScooterController: NSObject, ObservableObject {
     func setGear(_ g: Int)         { send(Voltix.gearFrame(g)) }
     func setSpeedLimit(_ kmh: Int) { send(Voltix.speedLimitFrame(kmh)) }
     func setCruise(_ v: Int)       { send(Voltix.cruiseFrame(v)) }
+
+    private func upsertDiscovery(
+        peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi: Int
+    ) {
+        let advertisesVoltix = Voltix.advertisesVoltix(in: advertisementData)
+        let advName = peripheral.name
+            ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
+
+        switch scanFilter {
+        case .voltixOnly:
+            break // iOS already filters by FF60 service in scan
+        case .allNamed:
+            guard let advName, !advName.isEmpty else { return }
+        }
+
+        let displayName: String
+        if let advName, !advName.isEmpty {
+            displayName = advName
+        } else if advertisesVoltix {
+            displayName = "Scooter (no name, FF60)"
+        } else {
+            displayName = "Unnamed device"
+        }
+
+        let entry = DiscoveredPeripheral(
+            id: peripheral.identifier,
+            peripheral: peripheral,
+            displayName: displayName,
+            rssi: rssi,
+            advertisesVoltix: advertisesVoltix
+        )
+
+        if let idx = discovered.firstIndex(where: { $0.id == peripheral.identifier }) {
+            discovered[idx] = entry
+        } else {
+            discovered.append(entry)
+        }
+        discovered.sort { $0.rssi > $1.rssi }
+    }
 }
 
 // MARK: - CBCentralManagerDelegate
@@ -201,11 +290,7 @@ extension ScooterController: CBCentralManagerDelegate {
                         didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any],
                         rssi RSSI: NSNumber) {
-        let name = peripheral.name ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
-        guard let name, !name.isEmpty else { return }
-        if !discovered.contains(where: { $0.identifier == peripheral.identifier }) {
-            discovered.append(peripheral)
-        }
+        upsertDiscovery(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI.intValue)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
