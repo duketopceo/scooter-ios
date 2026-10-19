@@ -28,6 +28,8 @@
 	<string>Scooter uses Bluetooth to connect to your HopCycle W3 Max scooter.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Scooter uses Bluetooth to connect to your HopCycle W3 Max scooter.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Scooter records your ride route on a map while you are using the app.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
