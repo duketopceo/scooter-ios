@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   upload:
-    runs-on: macos-15
+    runs-on: [self-hosted, macos, mac-mini]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
