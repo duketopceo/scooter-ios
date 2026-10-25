@@ -29,8 +29,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Add Homebrew to PATH
+        # launchd jobs get a bare PATH; mac-mini's brew lives in /opt/homebrew/bin.
+        if: runner.environment == 'self-hosted'
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
 
       - name: Write App Store Connect API key
         env:
