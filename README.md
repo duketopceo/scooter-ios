@@ -89,6 +89,17 @@ with XcodeGen (`brew install xcodegen`), and the generated
 
 Pairing happens inside this app. Do not pair through iOS Settings → Bluetooth.
 
+## Build it on Linux (xtool)
+
+[xtool](https://github.com/xtool-org/xtool) builds the same `Scooter/` sources from `Package.swift`, no Mac needed:
+
+```sh
+xtool dev build        # writes xtool/Scooter.app
+xtool dev              # build, sign with your Apple ID and install on a USB iPhone
+```
+
+`xtool.yml` points at `Scooter/Info.xtool.plist`: `Scooter/Info.plist` without the Xcode `$(...)` build variables, which xtool fills in itself. Add a new Info.plist key to both files. TestFlight still goes through the Xcode project below.
+
 ## TestFlight (Mac mini or GitHub Actions)
 
 **Local (same keys as Kate/Cairn):**

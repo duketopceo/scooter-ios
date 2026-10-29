@@ -11,3 +11,5 @@ DerivedData/
 
 # macOS
 .DS_Store
+# xtool
+xtool/

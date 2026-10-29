@@ -1,0 +1,6 @@
+version: 1
+# Info.xtool.plist is Scooter/Info.plist without the Xcode $(...) build variables,
+# which xtool fills in itself. Keep the two in step when adding Info.plist keys.
+bundleID: com.duketopceo.scooter
+iconPath: Scooter/Assets.xcassets/AppIcon.appiconset/icon-1024.png
+infoPath: Scooter/Info.xtool.plist
