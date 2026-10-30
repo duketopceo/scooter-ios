@@ -29,13 +29,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Add Homebrew to PATH
-        # launchd jobs get a bare PATH; mac-mini's brew lives in /opt/homebrew/bin.
-        if: runner.environment == 'self-hosted'
-        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-
       - name: Install XcodeGen
-        run: command -v xcodegen >/dev/null || brew install xcodegen
+        # launchd jobs get a bare PATH; call brew by absolute path instead of adding
+        # /opt/homebrew/bin to PATH — Homebrew rsync shadows /usr/bin/rsync and
+        # breaks xcodebuild -exportArchive ("Copy failed", rsync 3.5.0 usage error).
+        run: command -v xcodegen >/dev/null || /opt/homebrew/bin/brew install xcodegen
 
       - name: Write App Store Connect API key
         env:
@@ -64,6 +62,7 @@ jobs:
           ASC_KEY_PATH: ${{ github.workspace }}/../keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          export PATH="/usr/bin:/bin:/opt/homebrew/bin:$PATH"
           export ASC_KEY_PATH="$HOME/keys/AuthKey_${ASC_KEY_ID}.p8"
           test -f "$ASC_KEY_PATH"
           ./scripts/testflight.sh
