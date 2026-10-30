@@ -17,14 +17,9 @@ command -v xcodegen >/dev/null && xcodegen generate
 AUTH_ARGS=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 
 echo "→ Archive (build $BUILD_NUMBER, version $MARKETING_VERSION)"
-# Manual signing: the CI keychain carries only the Apple Distribution cert, so automatic signing
-# (which wants a development identity) can't satisfy the archive. Profile: the App Store profile
-# for com.duketopceo.scooter, downloaded to the runner by -allowProvisioningUpdates.
 xcodebuild -project Scooter.xcodeproj -scheme Scooter -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" archive "${AUTH_ARGS[@]}" \
-  DEVELOPMENT_TEAM="$APPLE_TEAM_ID" MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" \
-  PROVISIONING_PROFILE_SPECIFIER="iOS Team Store Provisioning Profile: com.duketopceo.scooter"
+  DEVELOPMENT_TEAM="$APPLE_TEAM_ID" MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
 EXPORT_PLIST="$ROOT/build/ExportOptions.plist"; cp ci/ExportOptions.plist "$EXPORT_PLIST"
 /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" "$EXPORT_PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :teamID $APPLE_TEAM_ID" "$EXPORT_PLIST"
