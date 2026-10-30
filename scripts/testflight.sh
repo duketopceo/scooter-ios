@@ -17,9 +17,12 @@ command -v xcodegen >/dev/null && xcodegen generate
 AUTH_ARGS=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 
 echo "→ Archive (build $BUILD_NUMBER, version $MARKETING_VERSION)"
+# Release archive signs with the distribution identity — an "iPhone Developer" identity is not
+# needed here and the CI keychain carries only the Apple Distribution cert.
 xcodebuild -project Scooter.xcodeproj -scheme Scooter -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" archive "${AUTH_ARGS[@]}" \
-  DEVELOPMENT_TEAM="$APPLE_TEAM_ID" MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+  DEVELOPMENT_TEAM="$APPLE_TEAM_ID" MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+  CODE_SIGN_IDENTITY="Apple Distribution"
 
 EXPORT_PLIST="$ROOT/build/ExportOptions.plist"; cp ci/ExportOptions.plist "$EXPORT_PLIST"
 /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" "$EXPORT_PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :teamID $APPLE_TEAM_ID" "$EXPORT_PLIST"
