@@ -47,6 +47,16 @@ jobs:
           printf '%s' "$ASC_KEY_P8" > "$HOME/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8"
           chmod 600 "$HOME/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8"
 
+      - name: Unlock CI signing keychain
+        if: runner.environment == 'self-hosted'
+        env:
+          KC_PASSWORD: ${{ secrets.KC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$HOME/Library/Keychains/scooter-build.keychain-db"
+          security unlock-keychain -p "$KC_PASSWORD" "$KC"
+          security list-keychains -d user -s "$KC" "$HOME/Library/Keychains/login.keychain-db" /Library/Keychains/System.keychain
+
       - name: Archive and upload
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
