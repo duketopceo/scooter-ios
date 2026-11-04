@@ -5,7 +5,9 @@ name: TestFlight
 #   CURRENT_PROJECT_VERSION = github.run_number + 20261104000000 (the offset is above every build
 #                             already uploaded for this app; never lower it)
 # workflow_dispatch does the same from a branch with a typed version (no GitHub release).
-# Runs on a GitHub-hosted macOS runner (public repo). Pull requests only build and test, unsigned, with no secrets.
+# The release job runs on the self-hosted `promax` Mac runner; set the repo variable IOS_RUNNER to
+# "macos-26" to use a GitHub-hosted runner instead (see RELEASING in the README).
+# Pull requests only build and test, unsigned, on GitHub-hosted runners, with no secrets.
 # Same script by hand on a Mac: scripts/ci-testflight.sh (see RELEASING in the README).
 on:
   pull_request:
@@ -46,7 +48,7 @@ jobs:
   upload:
     # Tag pushes and manual runs only; pull requests never reach the signing job.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(vars.IOS_RUNNER || '["self-hosted","macOS","promax"]') }}
     timeout-minutes: 60
     env:
       BUILD_OFFSET: "20261104000000"
@@ -93,6 +95,18 @@ jobs:
           umask 077
           mkdir -p "$ASC_KEY_DIR"
           printf '%s' "$ASC_KEY_P8" > "$ASC_KEY_DIR/AuthKey_$ASC_KEY_ID.p8"
+
+      - name: Unlock login keychain
+        if: runner.environment == 'self-hosted'
+        env:
+          KC_PASSWORD: ${{ secrets.KC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # The runner Mac's own login keychain; no keychains are created and the search list is left alone.
+          KC="$HOME/Library/Keychains/login.keychain-db"
+          security unlock-keychain -p "$KC_PASSWORD" "$KC"
+          # Lets codesign use the private key non-interactively (else errSecInternalComponent).
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASSWORD" "$KC" >/dev/null
 
       - name: Archive, export, upload
         env:
