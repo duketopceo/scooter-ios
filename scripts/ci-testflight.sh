@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Build a signed Release archive and upload to TestFlight (internal). Run on a Mac with Xcode.
-# Needs ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (AuthKey_<ID>.p8), APPLE_TEAM_ID.
+# The one TestFlight path: .github/workflows/testflight.yml (push an ios-vX.Y.Z tag) runs this
+# script, and so can you by hand.
+# Needs MARKETING_VERSION (X.Y.Z), BUILD_NUMBER (integer above every uploaded build; CI uses
+# run_number + 20261104000000), ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (AuthKey_<ID>.p8),
+# APPLE_TEAM_ID.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 die() { echo "testflight: $*" >&2; exit 1; }
@@ -8,8 +12,10 @@ die() { echo "testflight: $*" >&2; exit 1; }
 : "${ASC_KEY_ID:?}"; : "${ASC_ISSUER_ID:?}"; : "${ASC_KEY_PATH:?}"; APPLE_TEAM_ID="${APPLE_TEAM_ID:-6BP7W45U55}"
 [[ -f "$ASC_KEY_PATH" ]] || die "ASC_KEY_PATH is not a file"
 
-BUILD_NUMBER="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M%S)}"
-MARKETING_VERSION="${MARKETING_VERSION:-1.0}"
+: "${MARKETING_VERSION:?Set MARKETING_VERSION (X.Y.Z; CI takes it from the ios-vX.Y.Z tag)}"
+: "${BUILD_NUMBER:?Set BUILD_NUMBER (integer above every uploaded build; CI uses run_number + offset)}"
+[[ "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "MARKETING_VERSION must be X.Y.Z, got: $MARKETING_VERSION"
+[[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || die "BUILD_NUMBER must be an integer, got: $BUILD_NUMBER"
 ARCHIVE="$ROOT/build/Scooter.xcarchive"; EXPORT_DIR="$ROOT/build/export"; IPA="$EXPORT_DIR/Scooter.ipa"
 mkdir -p build
 command -v xcodegen >/dev/null && xcodegen generate

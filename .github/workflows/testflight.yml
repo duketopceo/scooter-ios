@@ -1,68 +1,123 @@
 name: TestFlight
 
-# Upload requires App Store Connect API key secrets on this repo.
-# Mac mini: `./scripts/testflight.sh` is equivalent when secrets live in the shell.
+# One path to TestFlight: push a tag `ios-vX.Y.Z` (for example ios-v1.2.3).
+#   MARKETING_VERSION       = the tag without `ios-v` (must be X.Y.Z semver, else the run fails)
+#   CURRENT_PROJECT_VERSION = github.run_number + 20261104000000 (the offset is above every build
+#                             already uploaded for this app; never lower it)
+# workflow_dispatch does the same from a branch with a typed version (no GitHub release).
+# Runs on a GitHub-hosted macOS runner (public repo). Pull requests only build and test, unsigned, with no secrets.
+# Same script by hand on a Mac: scripts/ci-testflight.sh (see RELEASING in the README).
 on:
-  workflow_dispatch:
+  pull_request:
   push:
-    branches: [main]
-    paths:
-      - "Scooter/**"
-      - "Scooter.xcodeproj/**"
-      - "project.yml"
-      - "scripts/testflight.sh"
-      - ".github/workflows/testflight.yml"
+    tags: ["ios-v*"]
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: "Marketing version X.Y.Z (the tag supplies it on tag pushes)"
+        required: true
 
 permissions:
-  contents: read
+  contents: write # create the GitHub release for the tag
 
 concurrency:
   group: testflight-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  upload:
-    runs-on: [self-hosted, macos, mac-mini]
+  build:
+    # Pull requests: unsigned build and tests only. No secrets are used in this job.
+    if: github.event_name == 'pull_request'
+    runs-on: macos-26
     timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Unit tests and unsigned build
+        run: |
+          xcodegen generate
+          xcodebuild build -project Scooter.xcodeproj -scheme Scooter -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO -quiet
+
+  upload:
+    # Tag pushes and manual runs only; pull requests never reach the signing job.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      BUILD_OFFSET: "20261104000000"
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
+      - name: Resolve version and build number
+        env:
+          INPUT_VERSION: ${{ inputs.marketing_version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#ios-v}"
+          else
+            version="$INPUT_VERSION"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$version' is not X.Y.Z semver. Tag the release as ios-vX.Y.Z, for example ios-v1.2.3."
+            exit 1
+          fi
+          {
+            echo "ASC_KEY_DIR=$RUNNER_TEMP/asc"
+            echo "MARKETING_VERSION=$version"
+            echo "BUILD_NUMBER=$((BUILD_OFFSET + GITHUB_RUN_NUMBER))"
+          } >> "$GITHUB_ENV"
+          echo "Version $version, build $((BUILD_OFFSET + GITHUB_RUN_NUMBER))"
+
       - name: Install XcodeGen
         # launchd jobs get a bare PATH; call brew by absolute path instead of adding
-        # /opt/homebrew/bin to PATH — Homebrew rsync shadows /usr/bin/rsync and
+        # /opt/homebrew/bin to PATH: Homebrew rsync shadows /usr/bin/rsync and
         # breaks xcodebuild -exportArchive ("Copy failed", rsync 3.5.0 usage error).
         run: command -v xcodegen >/dev/null || /opt/homebrew/bin/brew install xcodegen
+
 
       - name: Write App Store Connect API key
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
         run: |
           set -euo pipefail
-          test -n "${ASC_KEY_P8}"
-          mkdir -p "$HOME/keys"
-          printf '%s' "$ASC_KEY_P8" > "$HOME/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8"
-          chmod 600 "$HOME/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8"
+          test -n "$ASC_KEY_P8"
+          umask 077
+          mkdir -p "$ASC_KEY_DIR"
+          printf '%s' "$ASC_KEY_P8" > "$ASC_KEY_DIR/AuthKey_$ASC_KEY_ID.p8"
 
-      - name: Unlock CI signing keychain
-        if: runner.environment == 'self-hosted'
-        env:
-          KC_PASSWORD: ${{ secrets.KC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          KC="$HOME/Library/Keychains/scooter-build.keychain-db"
-          security unlock-keychain -p "$KC_PASSWORD" "$KC"
-          security list-keychains -d user -s "$KC" "$HOME/Library/Keychains/login.keychain-db" /Library/Keychains/System.keychain
-
-      - name: Archive and upload
+      - name: Archive, export, upload
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_PATH: ${{ github.workspace }}/../keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          export PATH="/usr/bin:/bin:/opt/homebrew/bin:$PATH"
-          export ASC_KEY_PATH="$HOME/keys/AuthKey_${ASC_KEY_ID}.p8"
+          export PATH="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          export ASC_KEY_PATH="$ASC_KEY_DIR/AuthKey_$ASC_KEY_ID.p8"
           test -f "$ASC_KEY_PATH"
-          ./scripts/testflight.sh
+          ./scripts/ci-testflight.sh
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export PATH="/usr/bin:/bin:/opt/homebrew/bin:$PATH"
+          command -v gh >/dev/null || /opt/homebrew/bin/brew install gh
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "Scooter $MARKETING_VERSION" --generate-notes \
+            --notes "Uploaded to TestFlight as version $MARKETING_VERSION, build $BUILD_NUMBER."
+
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$ASC_KEY_DIR" "$HOME"/.appstoreconnect/private_keys/AuthKey_*.p8
+
