@@ -83,9 +83,9 @@ with XcodeGen (`brew install xcodegen`), and the generated
 
 - Bundle ID `com.duketopceo.scooter`, team `6BP7W45U55`, display name "Scooter".
 - Run on a physical iPhone. The iOS Simulator has no BLE.
-- TestFlight: `scripts/testflight.sh` archives, exports, and uploads
-  (needs `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`; `SKIP_UPLOAD=1` stops
-  after the IPA). The App Store Connect app record must exist first.
+- TestFlight: `scripts/ci-testflight.sh` archives, exports, and uploads
+  (needs `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`, `MARKETING_VERSION`, `BUILD_NUMBER`;
+  `SKIP_UPLOAD=1` stops after the IPA). See RELEASING below. The App Store Connect app record must exist first.
 
 Pairing happens inside this app. Do not pair through iOS Settings → Bluetooth.
 
@@ -100,20 +100,40 @@ xtool dev              # build, sign with your Apple ID and install on a USB iPh
 
 `xtool.yml` points at `Scooter/Info.xtool.plist`: `Scooter/Info.plist` without the Xcode `$(...)` build variables, which xtool fills in itself. Add a new Info.plist key to both files. TestFlight still goes through the Xcode project below.
 
-## TestFlight (Mac mini or GitHub Actions)
+## RELEASING (TestFlight)
 
-**Local (same keys as Kate/Cairn):**
+Tag `ios-vX.Y.Z` and push it:
 
 ```bash
-cd ~/src/scooter-ios && git pull origin main
-export ASC_KEY_ID="…" ASC_ISSUER_ID="…" ASC_KEY_PATH="$HOME/keys/AuthKey_….p8"
-export APPLE_TEAM_ID=6BP7W45U55
-./scripts/testflight.sh
+git tag ios-v1.2.3 && git push origin ios-v1.2.3
 ```
 
-**CI:** workflow `.github/workflows/testflight.yml` runs on push to `main` when
-`Scooter/**` changes, if repo secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`,
-`ASC_KEY_P8`, and `APPLE_TEAM_ID` are set.
+`.github/workflows/testflight.yml` runs on the self-hosted `promax` macOS runner, takes the version from the
+tag (it must be `X.Y.Z`, otherwise the run fails), sets the build number to
+`github.run_number + 20261104000000`, archives, exports, uploads to TestFlight and creates a GitHub
+release for the tag. Actions, Run workflow does the same from a branch with a typed version.
+Pull requests only build unsigned and never see secrets. Repo secrets: `APPLE_TEAM_ID`,
+`ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_KEY_P8`.
+
+**Backup runner.** The release job runs on the self-hosted `promax` Mac runner. To use a GitHub-hosted runner instead
+(for example when that Mac is offline), set the repo variable, and delete it to go back:
+
+```sh
+gh variable set IOS_RUNNER -R duketopceo/scooter-ios --body '"macos-26"'
+gh variable delete IOS_RUNNER -R duketopceo/scooter-ios
+```
+
+The release job only runs on tag pushes and manual runs, never on pull requests. Pull requests build on GitHub-hosted runners. `KC_PASSWORD` (the login keychain password of the runner Mac) is also a repo secret.
+
+By hand on a Mac:
+
+```bash
+export ASC_KEY_ID="…" ASC_ISSUER_ID="…" ASC_KEY_PATH="/path/to/AuthKey_….p8"
+export APPLE_TEAM_ID=6BP7W45U55 MARKETING_VERSION=1.2.3 BUILD_NUMBER=20261104000100
+./scripts/ci-testflight.sh
+```
+
+Pick a hand-run `BUILD_NUMBER` above anything CI will reach soon, or avoid hand uploads.
 
 ## Files
 
