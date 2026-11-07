@@ -13,3 +13,6 @@ DerivedData/
 .DS_Store
 # xtool
 xtool/
+
+# codebase-memory-mcp local index cache
+.codebase-memory/
