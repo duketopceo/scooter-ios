@@ -9,13 +9,14 @@ on the phone, talking straight to the scooter.
 
 ## What it does
 
-- Scan for nearby BLE devices, connect to the scooter
-- Live dashboard: speed (km/h), battery %, fault code
-- Lock / unlock (with optional 4-digit code)
-- Light on/off
-- Gear 0/1/2
-- Speed limit (km/h)
-- Cruise control on/off
+- Scan for nearby BLE devices (FF60 filter by default), connect to the scooter
+- Live dashboard: speed (km/h or mph), battery %, fault code
+- Save a favorite scooter and auto-reconnect when it is nearby
+- Record rides with a trip map (location permission asked when you start a ride)
+- Lock / unlock (with optional 4-digit code; experimental)
+- Light on/off, gear, speed limit, cruise control (some still marked experimental in the UI)
+- Extra controls: zero-start, e-brake, display brightness
+- Hidden Debug panel (tap the title five times) for raw BLE frames
 
 ## Your scooter (stem sticker)
 
