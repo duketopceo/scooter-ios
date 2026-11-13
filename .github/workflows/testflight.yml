@@ -73,9 +73,6 @@ jobs:
   upload:
     # Tag pushes and manual runs only; pull requests never reach the signing job.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    # Write is only needed to create the GitHub release on a tag.
-    permissions:
-      contents: ${{ github.ref_type == 'tag' && 'write' || 'read' }}
     runs-on: ${{ fromJSON(vars.IOS_RUNNER || '["self-hosted","macOS","promax"]') }}
     timeout-minutes: 60
     env:
