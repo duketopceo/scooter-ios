@@ -62,6 +62,8 @@ jobs:
       - name: Unsigned simulator build
         run: |
           export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
+          # The tracked project can lag newly added sources; generate from scratch.
+          rm -rf Scooter.xcodeproj
           xcodegen generate
           xcodebuild build -project Scooter.xcodeproj -scheme Scooter \
             -destination 'generic/platform=iOS Simulator' \
