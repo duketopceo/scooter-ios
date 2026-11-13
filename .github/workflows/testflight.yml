@@ -73,6 +73,9 @@ jobs:
   upload:
     # Tag pushes and manual runs only; pull requests never reach the signing job.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Write is only needed to create the GitHub release on a tag.
+    permissions:
+      contents: ${{ github.ref_type == 'tag' && 'write' || 'read' }}
     runs-on: ${{ fromJSON(vars.IOS_RUNNER || '["self-hosted","macOS","promax"]') }}
     timeout-minutes: 60
     env:
@@ -94,7 +97,8 @@ jobs:
             echo "No before SHA; running upload."
             exit 0
           fi
-          if git diff --name-only "$before" "${{ github.sha }}" | grep -Ev '(\.(md|MD)$|^docs/|^LICENSE$|^\.gitignore$|^reference/)' >/dev/null; then
+          changed="$(git diff --name-only "$before" "${{ github.sha }}")"
+          if printf '%s\n' "$changed" | grep -Ev '(\.(md|MD)$|^docs/|^LICENSE$|^\.gitignore$|^reference/)' >/dev/null; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             echo "Non-docs paths changed; running upload."
           else
