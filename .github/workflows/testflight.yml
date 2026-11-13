@@ -1,18 +1,29 @@
 name: TestFlight
 
-# One path to TestFlight: push a tag `ios-vX.Y.Z` (for example ios-v1.2.3).
-#   MARKETING_VERSION       = the tag without `ios-v` (must be X.Y.Z semver, else the run fails)
+# Paths to TestFlight:
+#   1) Push a tag `ios-vX.Y.Z` (for example ios-v1.2.3) — creates a GitHub release.
+#   2) Push to main — uploads when non-docs paths changed (no GitHub release).
+#   3) workflow_dispatch with a typed marketing version.
+#   MARKETING_VERSION       = tag without `ios-v`, or dispatch input, or latest ios-v* tag on main
 #   CURRENT_PROJECT_VERSION = github.run_number + 20261104000000 (the offset is above every build
 #                             already uploaded for this app; never lower it)
-# workflow_dispatch does the same from a branch with a typed version (no GitHub release).
 # The release job runs on the self-hosted `promax` Mac runner; set the repo variable IOS_RUNNER to
 # "macos-26" to use a GitHub-hosted runner instead (see RELEASING in the README).
-# Pull requests only build and test, unsigned, on GitHub-hosted runners, with no secrets.
+# Pull requests only build unsigned on GitHub-hosted runners, with no secrets, and never use a
+# self-hosted runner. Docs-only changes skip the iOS build.
 # Same script by hand on a Mac: scripts/ci-testflight.sh (see RELEASING in the README).
 on:
   pull_request:
+    paths:
+      - "Scooter/**"
+      - "Package.swift"
+      - "project.yml"
+      - "scripts/**"
+      - "xtool.yml"
+      - ".github/workflows/testflight.yml"
   push:
     tags: ["ios-v*"]
+    branches: [main]
   workflow_dispatch:
     inputs:
       marketing_version:
@@ -23,8 +34,8 @@ permissions:
   contents: write # create the GitHub release for the tag
 
 concurrency:
-  group: testflight-${{ github.ref }}
-  cancel-in-progress: false
+  group: testflight-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -38,12 +49,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Cache SPM and DerivedData
+        uses: actions/cache@v4
+        with:
+          path: |
+            .derived
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-scooter-spm-${{ hashFiles('Package.swift', 'project.yml') }}
+          restore-keys: ${{ runner.os }}-scooter-spm-
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
-      - name: Unit tests and unsigned build
+      - name: Unsigned simulator build
         run: |
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
           xcodegen generate
-          xcodebuild build -project Scooter.xcodeproj -scheme Scooter -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO -quiet
+          xcodebuild build -project Scooter.xcodeproj -scheme Scooter \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath .derived \
+            CODE_SIGNING_ALLOWED=NO -quiet
 
   upload:
     # Tag pushes and manual runs only; pull requests never reach the signing job.
@@ -56,16 +79,44 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Gate main-branch uploads to non-docs changes
+        id: gate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [[ -z "$before" || "$before" =~ ^0+$ ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "No before SHA; running upload."
+            exit 0
+          fi
+          if git diff --name-only "$before" "${{ github.sha }}" | grep -Ev '(\.(md|MD)$|^docs/|^LICENSE$|^\.gitignore$|^reference/)' >/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Non-docs paths changed; running upload."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only change on main; skipping TestFlight upload."
+          fi
 
       - name: Resolve version and build number
+        if: steps.gate.outcome == 'skipped' || steps.gate.outputs.run == 'true'
         env:
           INPUT_VERSION: ${{ inputs.marketing_version }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="${GITHUB_REF_NAME#ios-v}"
-          else
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
             version="$INPUT_VERSION"
+          else
+            # Main-branch auto upload: reuse the latest ios-v* marketing version.
+            version="$(git tag -l 'ios-v*' --sort=-v:refname | head -n1 | sed 's/^ios-v//')"
+            if [[ -z "$version" ]]; then
+              echo "::error::No ios-v* tags found to supply MARKETING_VERSION on a main push."
+              exit 1
+            fi
           fi
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::'$version' is not X.Y.Z semver. Tag the release as ios-vX.Y.Z, for example ios-v1.2.3."
@@ -79,6 +130,7 @@ jobs:
           echo "Version $version, build $((BUILD_OFFSET + GITHUB_RUN_NUMBER))"
 
       - name: Install XcodeGen
+        if: steps.gate.outcome == 'skipped' || steps.gate.outputs.run == 'true'
         # launchd jobs get a bare PATH; call brew by absolute path instead of adding
         # /opt/homebrew/bin to PATH: Homebrew rsync shadows /usr/bin/rsync and
         # breaks xcodebuild -exportArchive ("Copy failed", rsync 3.5.0 usage error).
@@ -86,6 +138,7 @@ jobs:
 
 
       - name: Write App Store Connect API key
+        if: steps.gate.outcome == 'skipped' || steps.gate.outputs.run == 'true'
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -97,7 +150,7 @@ jobs:
           printf '%s' "$ASC_KEY_P8" > "$ASC_KEY_DIR/AuthKey_$ASC_KEY_ID.p8"
 
       - name: Unlock login keychain
-        if: runner.environment == 'self-hosted'
+        if: (steps.gate.outcome == 'skipped' || steps.gate.outputs.run == 'true') && runner.environment == 'self-hosted'
         env:
           KC_PASSWORD: ${{ secrets.KC_PASSWORD }}
         run: |
@@ -109,6 +162,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASSWORD" "$KC" >/dev/null
 
       - name: Archive, export, upload
+        if: steps.gate.outcome == 'skipped' || steps.gate.outputs.run == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -120,7 +174,7 @@ jobs:
           ./scripts/ci-testflight.sh
 
       - name: Create GitHub release
-        if: github.ref_type == 'tag'
+        if: (steps.gate.outcome == 'skipped' || steps.gate.outputs.run == 'true') && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -132,6 +186,6 @@ jobs:
             --notes "Uploaded to TestFlight as version $MARKETING_VERSION, build $BUILD_NUMBER."
 
       - name: Remove the API key
-        if: always()
+        if: always() && (steps.gate.outcome == 'skipped' || steps.gate.outputs.run == 'true')
         run: rm -rf "$ASC_KEY_DIR" "$HOME"/.appstoreconnect/private_keys/AuthKey_*.p8
 
