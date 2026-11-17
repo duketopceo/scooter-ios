@@ -145,9 +145,16 @@ final class ScooterController: NSObject, ObservableObject {
     func connect(_ peripheral: CBPeripheral) {
         stopScan()
         cancelSetupTimer()
+        pollTimer?.invalidate()
+        pollTimer = nil
+        // Drop any prior link before starting a new attempt.
+        cancelTrackedConnections(except: peripheral)
         writeCharacteristic = nil
         notifyCharacteristic = nil
         notifyEnabled = false
+        isConnected = false
+        connected = nil
+        connectedID = nil
         isConnecting = true
         connectingPeripheral = peripheral
         bluetoothError = nil
@@ -159,13 +166,21 @@ final class ScooterController: NSObject, ObservableObject {
         cancelSetupTimer()
         pollTimer?.invalidate()
         pollTimer = nil
-        if let connected = connected {
-            central?.cancelPeripheralConnection(connected)
-        } else if let connectingPeripheral {
-            central?.cancelPeripheralConnection(connectingPeripheral)
-        }
+        cancelTrackedConnections(except: nil)
         resetSessionState()
         status = "Disconnected"
+    }
+
+    /// Cancels CoreBluetooth links for tracked peripherals. Skips `except` to avoid
+    /// cancel+reconnect races when switching to the same peripheral.
+    private func cancelTrackedConnections(except: CBPeripheral?) {
+        var seen = Set<UUID>()
+        for candidate in [connected, connectingPeripheral] {
+            guard let peripheral = candidate else { continue }
+            if let except, peripheral === except { continue }
+            guard seen.insert(peripheral.identifier).inserted else { continue }
+            central?.cancelPeripheralConnection(peripheral)
+        }
     }
 
     private func resetSessionState() {
@@ -489,6 +504,7 @@ extension ScooterController: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager,
                         didDisconnectPeripheral peripheral: CBPeripheral,
                         error: Error?) {
+        guard peripheral === connected || peripheral === connectingPeripheral else { return }
         cancelSetupTimer()
         pollTimer?.invalidate()
         pollTimer = nil

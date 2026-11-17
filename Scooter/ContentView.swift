@@ -133,10 +133,14 @@ struct ContentView: View {
             Text(controller.status)
             if let message = controller.bluetoothError {
                 Text(message).foregroundColor(.red)
-                if needsBluetoothSettingsLink(message) {
-                    Button("Open Bluetooth settings") {
-                        openBluetoothSettings()
+                if message.localizedCaseInsensitiveContains("permission") {
+                    Button("Open app settings") {
+                        openAppSettings()
                     }
+                } else if message.localizedCaseInsensitiveContains("Bluetooth is off") {
+                    Text("Turn Bluetooth on in Settings → Bluetooth, then return here and Rescan.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
                 }
             }
             HStack {
@@ -255,8 +259,16 @@ struct ContentView: View {
             Section("Controls") {
                 Stepper(value: $gear, in: 0...3) { Text("Gear: \(gear)  (works)") }
                     .onChange(of: gear) { value in controller.setGear(value) }
-                Toggle("Light" + (controller.winners["light"] == nil ? " (experimental)" : ""), isOn: $lightOn)
-                    .onChange(of: lightOn) { value in controller.setLight(value) }
+                Toggle(
+                    "Light" + (controller.winners["light"] == nil ? " (experimental)" : ""),
+                    isOn: Binding(
+                        get: { lightOn },
+                        set: { newValue in
+                            lightOn = newValue
+                            controller.setLight(newValue)
+                        }
+                    )
+                )
                 HStack {
                     Stepper(value: $speedLimitKmh, in: 6...40) {
                         Text(preferMiles
@@ -315,12 +327,7 @@ struct ContentView: View {
         return String(format: "%.1f km/h (%.1f mph)", kmh, kmh / 1.609)
     }
 
-    private func needsBluetoothSettingsLink(_ message: String) -> Bool {
-        message.localizedCaseInsensitiveContains("permission")
-            || message.localizedCaseInsensitiveContains("Bluetooth is off")
-    }
-
-    private func openBluetoothSettings() {
+    private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
     }

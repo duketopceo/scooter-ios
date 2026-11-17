@@ -67,7 +67,7 @@ struct TripsListView: View {
                             .foregroundColor(.secondary)
                         Text("No trips yet")
                             .font(.headline)
-                        Text("Connect on the Scooter tab, tap Start ride, then ride outdoors with location allowed. Routes stay on this iPhone.")
+                        Text("Connect on the Scooter tab, tap Start ride, then ride outdoors with location allowed. Routes are stored on this iPhone and may be included in device backups.")
                             .font(.footnote)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)

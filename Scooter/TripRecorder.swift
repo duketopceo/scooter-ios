@@ -14,6 +14,8 @@ final class TripRecorder: NSObject, ObservableObject {
     private var activeTripID: UUID?
     private let locationManager = CLLocationManager()
     private var lastLocation: CLLocation?
+    /// True when Start ride was tapped while location auth was still undetermined.
+    private var startRequestedWhileUndetermined = false
 
     init(store: TripStore) {
         self.store = store
@@ -38,9 +40,11 @@ final class TripRecorder: NSObject, ObservableObject {
         requestLocationPermission()
         let status = locationManager.authorizationStatus
         guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+            startRequestedWhileUndetermined = status == .notDetermined
             locationError = "Allow location while using the app to record your route on the map."
             return
         }
+        startRequestedWhileUndetermined = false
         locationError = nil
         isRecording = true
         tripStart = Date()
@@ -94,6 +98,17 @@ final class TripRecorder: NSObject, ObservableObject {
 extension TripRecorder: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         locationAuthorization = manager.authorizationStatus
+        guard startRequestedWhileUndetermined else { return }
+        switch locationAuthorization {
+        case .authorizedWhenInUse, .authorizedAlways:
+            startRequestedWhileUndetermined = false
+            startRide()
+        case .denied, .restricted:
+            startRequestedWhileUndetermined = false
+            locationError = "Allow location while using the app to record your route on the map."
+        default:
+            break
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
