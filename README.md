@@ -83,6 +83,8 @@ with XcodeGen (`brew install xcodegen`), and the generated
 `Scooter.xcodeproj` is committed so it also opens directly.
 
 - Bundle ID `com.duketopceo.scooter`, team `6BP7W45U55`, display name "Scooter".
+- Marketing version lives in `project.yml` (`MARKETING_VERSION`); CI overrides it from the `ios-vX.Y.Z` tag on upload.
+- Current cut: **1.0.4** — see `RELEASE_NOTES.md` for TestFlight “What to Test”.
 - Run on a physical iPhone. The iOS Simulator has no BLE.
 - TestFlight: `scripts/ci-testflight.sh` archives, exports, and uploads
   (needs `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`, `MARKETING_VERSION`, `BUILD_NUMBER`;

@@ -67,12 +67,13 @@ struct TripsListView: View {
                             .foregroundColor(.secondary)
                         Text("No trips yet")
                             .font(.headline)
-                        Text("Connect to your scooter, then start a ride from the Scooter tab.")
+                        Text("Connect on the Scooter tab, tap Start ride, then ride outdoors with location allowed. Routes stay on this iPhone.")
                             .font(.footnote)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
                         ForEach(tripStore.trips) { trip in

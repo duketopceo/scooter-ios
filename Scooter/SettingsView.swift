@@ -39,8 +39,24 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
+
+                Section("About") {
+                    LabeledContent("Version") { Text(appVersion) }
+                    LabeledContent("Build") { Text(appBuild) }
+                    Text("HopCycle W3 Max · Voltix FF60 · no account")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
             }
             .navigationTitle("Settings")
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+
+    private var appBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
     }
 }

@@ -40,6 +40,8 @@ final class ScooterController: NSObject, ObservableObject {
     @Published var scanFilter: ScanFilter = .voltixOnly
     @Published var status = "Scanning off"
     @Published var isConnected = false
+    /// True from `connect(_:)` until GATT setup finishes, fails, or disconnects.
+    @Published var isConnecting = false
     @Published var telemetry = ScooterTelemetry()
     @Published var connectedID: UUID?
     @Published var log: [LogLine] = []
@@ -60,6 +62,8 @@ final class ScooterController: NSObject, ObservableObject {
 
     private var central: CBCentralManager?
     private var connected: CBPeripheral?
+    /// Peripheral passed to `connect` before `didConnect` (for Cancel).
+    private var connectingPeripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var notifyCharacteristic: CBCharacteristic?
     private var notifyEnabled = false
@@ -144,6 +148,9 @@ final class ScooterController: NSObject, ObservableObject {
         writeCharacteristic = nil
         notifyCharacteristic = nil
         notifyEnabled = false
+        isConnecting = true
+        connectingPeripheral = peripheral
+        bluetoothError = nil
         status = "Connecting to \(peripheral.name ?? "device")…"
         central?.connect(peripheral, options: nil)
     }
@@ -154,6 +161,8 @@ final class ScooterController: NSObject, ObservableObject {
         pollTimer = nil
         if let connected = connected {
             central?.cancelPeripheralConnection(connected)
+        } else if let connectingPeripheral {
+            central?.cancelPeripheralConnection(connectingPeripheral)
         }
         resetSessionState()
         status = "Disconnected"
@@ -161,10 +170,12 @@ final class ScooterController: NSObject, ObservableObject {
 
     private func resetSessionState() {
         connected = nil
+        connectingPeripheral = nil
         writeCharacteristic = nil
         notifyCharacteristic = nil
         notifyEnabled = false
         isConnected = false
+        isConnecting = false
         connectedID = nil
         telemetry = ScooterTelemetry()
         rx.removeAll()
@@ -180,8 +191,7 @@ final class ScooterController: NSObject, ObservableObject {
         cancelSetupTimer()
         setupTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self, weak peripheral] _ in
             guard let self, let peripheral, peripheral === self.connected else { return }
-            self.status = "Setup timed out (no FF60 GATT). Wrong device or scooter asleep—Disconnect and try another row."
-            self.bluetoothError = self.status
+            self.failSetup("Setup timed out (no FF60 GATT). Wrong device or scooter asleep—Disconnect and try another row.")
         }
     }
 
@@ -394,6 +404,7 @@ final class ScooterController: NSObject, ObservableObject {
         guard notifyEnabled, writeCharacteristic != nil else { return }
         cancelSetupTimer()
         bluetoothError = nil
+        isConnecting = false
         isConnected = true
         status = "Connected to scooter"
         if let c = writeCharacteristic {
@@ -418,6 +429,7 @@ final class ScooterController: NSObject, ObservableObject {
         bluetoothError = message
         status = message
         isConnected = false
+        isConnecting = false
         if disconnect, let connected {
             central?.cancelPeripheralConnection(connected)
         }

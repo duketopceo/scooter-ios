@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var controller: ScooterController
     @EnvironmentObject private var tripRecorder: TripRecorder
+    @AppStorage("preferMiles") private var preferMiles = false
     @State private var gear = 1
     @State private var speedLimitKmh = 25
     @State private var cruiseOn = false
@@ -11,7 +12,7 @@ struct ContentView: View {
     @State private var showDebug = false
     @State private var titleTaps = 0
     @State private var zeroStart = false
-    @State private var miles = false
+    @State private var scooterDisplayMiles = false
     @State private var eBrake = 1
     @State private var brightness = 3
 
@@ -20,12 +21,18 @@ struct ContentView: View {
             Form {
                 statusSection
                 scanFilterSection
-                if let fav = controller.savedFavorite, !controller.isConnected {
+                if controller.isConnecting {
+                    connectingSection
+                }
+                if let fav = controller.savedFavorite, !controller.isConnected, !controller.isConnecting {
                     Section("Saved scooter") {
                         Text("Will auto-connect to \(fav.displayName) when it appears.")
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
+                }
+                if controller.isScanning && controller.discovered.isEmpty && !controller.isConnecting {
+                    scanningEmptySection
                 }
                 if !controller.discovered.isEmpty {
                     discoveredSection
@@ -36,7 +43,7 @@ struct ContentView: View {
                     dashboardSection
                     controlsSection
                     noteSection
-                } else {
+                } else if !controller.isConnecting {
                     identifyHelpSection
                 }
             }
@@ -52,6 +59,37 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showDebug) { DebugView(controller: controller) }
+            .onChange(of: controller.telemetry.lightOn) { value in
+                if controller.isConnected { lightOn = value }
+            }
+            .onChange(of: controller.isConnected) { connected in
+                if connected { lightOn = controller.telemetry.lightOn }
+            }
+        }
+    }
+
+    private var connectingSection: some View {
+        Section("Connection") {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text(controller.status)
+                    .foregroundColor(.secondary)
+            }
+            Button("Cancel", role: .destructive, action: controller.disconnect)
+        }
+    }
+
+    private var scanningEmptySection: some View {
+        Section {
+            HStack(spacing: 10) {
+                ProgressView()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Looking for scooters…")
+                    Text("Power the scooter on and stay within ~2 m. Strongest signal rises to the top.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
     }
 
@@ -95,11 +133,17 @@ struct ContentView: View {
             Text(controller.status)
             if let message = controller.bluetoothError {
                 Text(message).foregroundColor(.red)
+                if needsBluetoothSettingsLink(message) {
+                    Button("Open Bluetooth settings") {
+                        openBluetoothSettings()
+                    }
+                }
             }
             HStack {
                 Button(controller.isScanning ? "Stop scan" : "Rescan",
                        action: controller.isScanning ? controller.stopScan : controller.startScan)
-                if controller.isConnected {
+                    .disabled(controller.isConnecting || !controller.bluetoothReady)
+                if controller.isConnected || controller.isConnecting {
                     Spacer()
                     Button("Disconnect", role: .destructive, action: controller.disconnect)
                 }
@@ -118,6 +162,7 @@ struct ContentView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .disabled(controller.isConnecting)
             Text("HopCycle/W3 Max uses the Voltix FF60 protocol (same as the official Voltix app QR on the stem). Filter by FF60, not by app name “Scooter”.")
                 .font(.footnote)
                 .foregroundColor(.secondary)
@@ -156,9 +201,12 @@ struct ContentView: View {
                         }
                         if controller.isConnected && controller.connectedID == item.id {
                             Text("Connected").foregroundColor(.green)
+                        } else if controller.isConnecting && controller.connectedID == item.id {
+                            ProgressView()
                         }
                     }
                 }
+                .disabled(controller.isConnecting)
             }
         }
     }
@@ -166,18 +214,38 @@ struct ContentView: View {
     private var dashboardSection: some View {
         Section("Dashboard") {
             let t = controller.telemetry
-            LabeledContent("Speed") { Text("\(t.speedKmh, specifier: "%.1f") km/h (\(t.speedKmh / 1.609, specifier: "%.1f") mph)") }
+            LabeledContent("Speed") { Text(formattedSpeed(t.speedKmh)) }
             LabeledContent("Battery") { Text("\(t.batteryPct)%") }
-            if let l = t.speedLimitKmh { LabeledContent("Speed limit (from scooter)") { Text("\(l) km/h") } }
-            LabeledContent("Lights (from scooter)") { Text(t.lightOn ? "on" : "off") + Text(String(format: "  0x%02X", t.lightFlags)).foregroundColor(.secondary) }
-            LabeledContent("Fault code") { Text(t.faultCode == 0 ? "none" : String(format: "0x%02X", t.faultCode)) }
+            if let l = t.speedLimitKmh {
+                LabeledContent("Speed limit (from scooter)") {
+                    Text(preferMiles
+                          ? String(format: "%.0f mph", Double(l) / 1.609)
+                          : "\(l) km/h")
+                }
+            }
+            LabeledContent("Lights (from scooter)") {
+                Text(t.lightOn ? "on" : "off")
+                    + Text(String(format: "  0x%02X", t.lightFlags)).foregroundColor(.secondary)
+            }
+            LabeledContent("Fault code") {
+                Text(t.faultCode == 0 ? "none" : String(format: "0x%02X", t.faultCode))
+            }
             if let v = t.voltage { LabeledContent("Voltage (exp.)") { Text("\(v, specifier: "%.2f") V") } }
             if let a = t.currentA { LabeledContent("Current (exp.)") { Text("\(a, specifier: "%.2f") A") } }
             if let c = t.tempC { LabeledContent("Temp (exp.)") { Text("\(c, specifier: "%.1f") °C") } }
-            if let trip = t.tripRaw { LabeledContent("Trip raw (exp.)") { Text(Voltix.hex(trip)).font(.caption.monospaced()) } }
+            if let trip = t.tripRaw {
+                LabeledContent("Trip raw (exp.)") { Text(Voltix.hex(trip)).font(.caption.monospaced()) }
+            }
             if let sn = t.serial, !sn.isEmpty { LabeledContent("Serial") { Text(sn) } }
-            if let fw = t.firmware { LabeledContent("Firmware (exp.)") { Text(fw).font(.caption.monospaced()) } }
-            if t.lastUpdate == nil { Text("No telemetry yet. The app tries a second poll shape after 4 s.").font(.footnote).foregroundColor(.secondary) }
+            if let fw = t.firmware {
+                LabeledContent("Firmware (exp.)") { Text(fw).font(.caption.monospaced()) }
+            }
+            if t.lastUpdate == nil {
+                Text("No telemetry yet. The app tries a second poll shape after 4 s.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            Toggle("Show speed in mph", isOn: $preferMiles)
             Button("Refresh scooter info") { controller.queryAll() }
         }
     }
@@ -190,7 +258,11 @@ struct ContentView: View {
                 Toggle("Light" + (controller.winners["light"] == nil ? " (experimental)" : ""), isOn: $lightOn)
                     .onChange(of: lightOn) { value in controller.setLight(value) }
                 HStack {
-                    Stepper(value: $speedLimitKmh, in: 6...40) { Text("Speed limit: \(speedLimitKmh) km/h (exp.)") }
+                    Stepper(value: $speedLimitKmh, in: 6...40) {
+                        Text(preferMiles
+                              ? String(format: "Speed limit: %.0f mph (exp.)", Double(speedLimitKmh) / 1.609)
+                              : "Speed limit: \(speedLimitKmh) km/h (exp.)")
+                    }
                     Button("Set") { controller.setSpeedLimit(speedLimitKmh) }
                 }
                 Toggle("Cruise control (exp.)", isOn: $cruiseOn)
@@ -204,8 +276,8 @@ struct ContentView: View {
             Section("More settings (experimental)") {
                 Toggle("Zero-start (off = kick to start)", isOn: $zeroStart)
                     .onChange(of: zeroStart) { v in controller.setStartMode(zeroStart: v) }
-                Toggle("Display in miles", isOn: $miles)
-                    .onChange(of: miles) { v in controller.setUnits(miles: v) }
+                Toggle("Scooter display in miles (exp.)", isOn: $scooterDisplayMiles)
+                    .onChange(of: scooterDisplayMiles) { v in controller.setUnits(miles: v) }
                 Stepper(value: $eBrake, in: 0...3) { Text("Electronic brake: \(eBrake)") }
                     .onChange(of: eBrake) { v in controller.setEBrake(v) }
                 Stepper(value: $brightness, in: 1...5) { Text("Display brightness: \(brightness)") }
@@ -234,5 +306,22 @@ struct ContentView: View {
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private func formattedSpeed(_ kmh: Double) -> String {
+        if preferMiles {
+            return String(format: "%.1f mph (%.1f km/h)", kmh / 1.609, kmh)
+        }
+        return String(format: "%.1f km/h (%.1f mph)", kmh, kmh / 1.609)
+    }
+
+    private func needsBluetoothSettingsLink(_ message: String) -> Bool {
+        message.localizedCaseInsensitiveContains("permission")
+            || message.localizedCaseInsensitiveContains("Bluetooth is off")
+    }
+
+    private func openBluetoothSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
