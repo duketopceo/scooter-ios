@@ -13,6 +13,14 @@
 		A89349064CD6886805084964 /* Voltix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ABD3EDCF23089CB017121FC /* Voltix.swift */; };
 		DD2C7F5104C6CE331187FDBA /* ScooterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54DEC0AC58BC01AC91CECD5C /* ScooterApp.swift */; };
 		DE7BD6511B5CDC381BC0A81A /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42FC1CFDC5030974A6173E4C /* DebugView.swift */; };
+		1B78356FBBCF63D4AC96F44E /* AutoConnectCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0FB8437EE0C9502B253DAB /* AutoConnectCoordinator.swift */; };
+		42D4FA8A4407BD408AC820BF /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0573B070C6142C518DD7EC5 /* RootView.swift */; };
+		043E11FC9F217507E1ABCFE7 /* SavedScooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6423EE6D111D3D3237F0D15C /* SavedScooter.swift */; };
+		70D4C752248A2068F6153464 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC46019C4CF3117BA5D55EF6 /* SettingsView.swift */; };
+		1F0EB24EFEE755E631F2C1D2 /* TripMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CF4B42E119B400145E91DB3 /* TripMapView.swift */; };
+		46C08221948243B7FC7D0FC2 /* TripModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E7A305E6BC7B6D447314D3 /* TripModels.swift */; };
+		CC9C634BC908B1242D62054B /* TripRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A52107B9D70EBFE98F8FFA0 /* TripRecorder.swift */; };
+		9EF0B259015B64440E6ADC54 /* TripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F2871F4CCE3CC1831A96B8B /* TripStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +32,14 @@
 		8705F63D278B2A035CEF795C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BE474CA2092930DC7DCE72FE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		C34CD961207155670B4A1F74 /* ScooterBLE.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterBLE.swift; sourceTree = "<group>"; };
+		2A0FB8437EE0C9502B253DAB /* AutoConnectCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoConnectCoordinator.swift; sourceTree = "<group>"; };
+		C0573B070C6142C518DD7EC5 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		6423EE6D111D3D3237F0D15C /* SavedScooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedScooter.swift; sourceTree = "<group>"; };
+		CC46019C4CF3117BA5D55EF6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		8CF4B42E119B400145E91DB3 /* TripMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMapView.swift; sourceTree = "<group>"; };
+		42E7A305E6BC7B6D447314D3 /* TripModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripModels.swift; sourceTree = "<group>"; };
+		5A52107B9D70EBFE98F8FFA0 /* TripRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripRecorder.swift; sourceTree = "<group>"; };
+		7F2871F4CCE3CC1831A96B8B /* TripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -41,6 +57,14 @@
 				8705F63D278B2A035CEF795C /* Assets.xcassets */,
 				BE474CA2092930DC7DCE72FE /* ContentView.swift */,
 				42FC1CFDC5030974A6173E4C /* DebugView.swift */,
+				2A0FB8437EE0C9502B253DAB /* AutoConnectCoordinator.swift */,
+				C0573B070C6142C518DD7EC5 /* RootView.swift */,
+				6423EE6D111D3D3237F0D15C /* SavedScooter.swift */,
+				CC46019C4CF3117BA5D55EF6 /* SettingsView.swift */,
+				8CF4B42E119B400145E91DB3 /* TripMapView.swift */,
+				42E7A305E6BC7B6D447314D3 /* TripModels.swift */,
+				5A52107B9D70EBFE98F8FFA0 /* TripRecorder.swift */,
+				7F2871F4CCE3CC1831A96B8B /* TripStore.swift */,
 				625081CA3677A43369729FB4 /* Info.plist */,
 				54DEC0AC58BC01AC91CECD5C /* ScooterApp.swift */,
 				C34CD961207155670B4A1F74 /* ScooterBLE.swift */,
@@ -128,6 +152,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1B78356FBBCF63D4AC96F44E /* AutoConnectCoordinator.swift in Sources */,
+				42D4FA8A4407BD408AC820BF /* RootView.swift in Sources */,
+				043E11FC9F217507E1ABCFE7 /* SavedScooter.swift in Sources */,
+				70D4C752248A2068F6153464 /* SettingsView.swift in Sources */,
+				1F0EB24EFEE755E631F2C1D2 /* TripMapView.swift in Sources */,
+				46C08221948243B7FC7D0FC2 /* TripModels.swift in Sources */,
+				CC9C634BC908B1242D62054B /* TripRecorder.swift in Sources */,
+				9EF0B259015B64440E6ADC54 /* TripStore.swift in Sources */,
 				92CC2E9B88062F697872D3A2 /* ContentView.swift in Sources */,
 				DE7BD6511B5CDC381BC0A81A /* DebugView.swift in Sources */,
 				DD2C7F5104C6CE331187FDBA /* ScooterApp.swift in Sources */,
@@ -188,7 +220,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -272,7 +304,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
