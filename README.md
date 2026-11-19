@@ -109,11 +109,10 @@ Tag `ios-vX.Y.Z` and push it:
 git tag ios-v1.2.3 && git push origin ios-v1.2.3
 ```
 
-`.github/workflows/testflight.yml` runs on the self-hosted `promax` macOS runner, takes the version from the
-tag (it must be `X.Y.Z`, otherwise the run fails), sets the build number to
-`github.run_number + 20261104000000`, archives, exports, uploads to TestFlight and creates a GitHub
-release for the tag. Actions, Run workflow does the same from a branch with a typed version.
-Pull requests only build unsigned and never see secrets. Repo secrets: `APPLE_TEAM_ID`,
+Merges to `main` that change non-docs paths also upload a TestFlight build automatically. Those uploads reuse the latest `ios-v*` marketing version and set the build number to `github.run_number + 20261104000000`. No GitHub release is created for main-branch uploads.
+
+`.github/workflows/testflight.yml` runs the release job on the self-hosted `promax` macOS runner. Tag pushes also create a GitHub release. A tag that is not `X.Y.Z` fails fast. Actions, Run workflow does the same from a branch with a typed version.
+Pull requests only build unsigned on GitHub-hosted runners and never see secrets. Repo secrets: `APPLE_TEAM_ID`,
 `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_KEY_P8`.
 
 **Backup runner.** The release job runs on the self-hosted `promax` Mac runner. To use a GitHub-hosted runner instead
@@ -124,7 +123,7 @@ gh variable set IOS_RUNNER -R duketopceo/scooter-ios --body '"macos-26"'
 gh variable delete IOS_RUNNER -R duketopceo/scooter-ios
 ```
 
-The release job only runs on tag pushes and manual runs, never on pull requests. Pull requests build on GitHub-hosted runners. `KC_PASSWORD` (the login keychain password of the runner Mac) is also a repo secret.
+The release job runs on tag pushes, qualifying pushes to `main`, and manual runs, never on pull requests. Pull requests build on GitHub-hosted runners. `KC_PASSWORD` (the login keychain password of the runner Mac) is also a repo secret.
 
 By hand on a Mac:
 
